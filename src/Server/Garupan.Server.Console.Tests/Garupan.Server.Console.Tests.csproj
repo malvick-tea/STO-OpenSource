@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Garupan.Server.Console.Tests</RootNamespace>
+    <AssemblyName>Garupan.Server.Console.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- MA0004 (Meziantou: require ConfigureAwait(false)) conflicts with xUnit1030
+         (xUnit: forbid ConfigureAwait(false) in test methods). xUnit team's policy wins
+         for test code, so silence the Meziantou variant in this project only. -->
+    <NoWarn>$(NoWarn);MA0004</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Garupan.Server.Console\Garupan.Server.Console.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Net\Opus.Net\Opus.Net.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Net\Opus.Net.Udp\Opus.Net.Udp.csproj" />
+    <ProjectReference Include="..\..\Net\Garupan.Net.Session\Garupan.Net.Session.csproj" />
+    <ProjectReference Include="..\..\Sim\Garupan.Sim\Garupan.Sim.csproj" />
+    <ProjectReference Include="..\..\Content\Garupan.Content\Garupan.Content.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+  <!-- ServerHostBundle creates a real Sim world; Arch's shared archetype index is not
+       thread-safe across parallel test collections. -->
+  <ItemGroup>
+    <Content Include="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

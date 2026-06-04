@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Garupan.Server.Match.Tests</RootNamespace>
+    <AssemblyName>Garupan.Server.Match.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Garupan.Server.Match\Garupan.Server.Match.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Foundation\Opus.Foundation\Opus.Foundation.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Content\Opus.Content\Opus.Content.csproj" />
+    <ProjectReference Include="..\..\Sim\Garupan.Sim\Garupan.Sim.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Net\Opus.Net\Opus.Net.csproj" />
+    <ProjectReference Include="..\..\Net\Garupan.Net.Session\Garupan.Net.Session.csproj" />
+    <ProjectReference Include="..\..\Content\Garupan.Content\Garupan.Content.csproj" />
+  </ItemGroup>
+
+  <!-- MatchHost spins up a real Garupan.Sim world; Arch's archetype index is not
+       thread-safe across parallel test collections, so this assembly runs serially. -->
+  <ItemGroup>
+    <Content Include="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+</Project>

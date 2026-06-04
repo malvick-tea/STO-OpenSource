@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Garupan.Localisation</RootNamespace>
+    <AssemblyName>Garupan.Localisation</AssemblyName>
+    <Description>Game-specific translation-key registry (L10nKeys). Canon UI / Sim keys validated by garupan-tools loc-lint against the master CSV. Genre-neutral locale machinery lives in Opus.Localisation.</Description>
+  </PropertyGroup>
+
+  <ItemGroup Label="Game keys are typed against the engine's generic TranslationKey primitive.">
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Localisation\Opus.Localisation\Opus.Localisation.csproj" />
+  </ItemGroup>
+
+</Project>

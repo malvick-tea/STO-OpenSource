@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Garupan.Content</RootNamespace>
+    <AssemblyName>Garupan.Content</AssemblyName>
+    <Description>Game data shapes and catalogues (TankSpec, CrewMember, SchoolPalette, MatchMode, campaign / narrative specs). Pure data; no logic. Game-specific content the genre-neutral Opus engine deliberately does not own.</Description>
+
+    <!--
+      SA1310: a few catalogue identifiers carry underscores for readability. Scoped to
+      this game-content project; the engine stays strict.
+    -->
+    <NoWarn>$(NoWarn);SA1310</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup Label="Game content needs Foundation result/error helpers and the engine's generic LightingPreset primitive (loaded by the game-side LightingPresetCsv).">
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Foundation\Opus.Foundation\Opus.Foundation.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Content\Opus.Content\Opus.Content.csproj" />
+  </ItemGroup>
+
+</Project>

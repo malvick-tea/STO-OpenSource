@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Garupan.Garage.Demo</RootNamespace>
+    <AssemblyName>Garupan.Garage.Demo</AssemblyName>
+    <Description>Standalone Windows .exe that launches a live D3D12 window and renders the legacy sample vehicle through GarageSceneController. Proof of the full live-app rendering chain outside the test harness; foundation for the eventual Client.Windows boot pipeline migration.</Description>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Foundation\Opus.Foundation\Opus.Foundation.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Content\Opus.Content\Opus.Content.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Pal\Opus.Engine.Pal.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Pal.Sdl3\Opus.Engine.Pal.Sdl3.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Pal.Windows\Opus.Engine.Pal.Windows.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Pal.Windows.Direct3D12\Opus.Engine.Pal.Windows.Direct3D12.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Input\Opus.Engine.Input.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Rhi\Opus.Engine.Rhi.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Rhi.D3D12\Opus.Engine.Rhi.D3D12.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.FrameGraph\Opus.Engine.FrameGraph.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Renderer\Opus.Engine.Renderer.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Renderer.Direct3D12\Opus.Engine.Renderer.Direct3D12.csproj" />
+    <ProjectReference Include="..\..\Sim\Garupan.Sim\Garupan.Sim.csproj" />
+    <ProjectReference Include="..\..\Content\Garupan.Content\Garupan.Content.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Label="Internals exposed to the sibling test project (pure-logic tests against SimToWorldMapper / MatchLifecycle / DemoInputBindings).">
+    <InternalsVisibleTo Include="Garupan.Garage.Demo.Tests" />
+  </ItemGroup>
+
+</Project>

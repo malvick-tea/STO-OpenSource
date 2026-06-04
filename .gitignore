@@ -1,0 +1,59 @@
+# Build output
+bin/
+obj/
+build/output/
+artifacts/
+out/
+publish/
+
+# MSBuild and test output
+*.binlog
+*.buildlog
+TestResults/
+coverage/
+coverage.*.xml
+coverage.*.json
+*.trx
+
+# IDE files
+.vs/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Local config
+*.local.json
+secrets.json
+*.secrets.json
+.env
+.env.local
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+# Local diagnostics
+diagnostics/
+crashes/
+screenshots/
+*.dmp
+*.mdmp
+*.pdb.zip
+
+# Editor and OS files
+*.swp
+*.swo
+*~
+*.bak
+*.orig
+*.rej
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,17 @@
+<Project>
+
+  <!--
+    Game-side identity. The game is a consumer of the
+    Opus engine. This chains the repo-root engine props (Opus / Vellum defaults plus the
+    shared analyzer policy) and overrides only the product identity, so engine assemblies
+    keep the Opus identity and game assemblies keep the Garupan identity.
+  -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <Company>Garupan</Company>
+    <Product>Garupan</Product>
+    <Copyright>© Garupan project.</Copyright>
+  </PropertyGroup>
+
+</Project>

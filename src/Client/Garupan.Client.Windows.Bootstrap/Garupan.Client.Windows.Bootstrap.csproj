@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Garupan.Client.Windows.Bootstrap</RootNamespace>
+    <AssemblyName>Garupan.Client.Windows.Bootstrap</AssemblyName>
+    <Description>Platform-host-agnostic boot stages, Serilog setup, and localization corpus reader used by the D3D12 client (Garupan.Client.Windows.D3D12). Pure orchestration over Engine.Audio / Engine.Pal / Client.Core / Client.Ui — no renderer or host dependency.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Foundation\Opus.Foundation\Opus.Foundation.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Content\Opus.Content\Opus.Content.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Audio\Opus.Engine.Audio.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Input\Opus.Engine.Input.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Pal\Opus.Engine.Pal.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Ui\Opus.Engine.Ui.csproj" />
+    <ProjectReference Include="..\Garupan.Client.Core\Garupan.Client.Core.csproj" />
+    <ProjectReference Include="..\Garupan.Client.Ui\Garupan.Client.Ui.csproj" />
+    <ProjectReference Include="..\..\Content\Garupan.Content\Garupan.Content.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.File" />
+  </ItemGroup>
+
+</Project>

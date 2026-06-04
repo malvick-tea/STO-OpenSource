@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Garupan.Net.Session.Tests</RootNamespace>
+    <AssemblyName>Garupan.Net.Session.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Garupan.Net.Session\Garupan.Net.Session.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Net\Opus.Net\Opus.Net.csproj" />
+    <ProjectReference Include="..\..\Sim\Garupan.Sim\Garupan.Sim.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+</Project>

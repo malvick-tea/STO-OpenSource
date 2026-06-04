@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Garupan.Tools</RootNamespace>
+    <AssemblyName>garupan-tools</AssemblyName>
+    <Description>Garupan offline tooling — loc-lint, content-lint, future asset bakers. One exe with subcommands; never shipped to players.</Description>
+  </PropertyGroup>
+
+  <ItemGroup Label="Tools see Foundation + Content + Localisation so subcommands can validate data and translation keys against their owning catalogs.">
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Foundation\Opus.Foundation\Opus.Foundation.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Content\Opus.Content\Opus.Content.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Localisation\Opus.Localisation\Opus.Localisation.csproj" />
+    <ProjectReference Include="..\..\Content\Garupan.Content\Garupan.Content.csproj" />
+    <ProjectReference Include="..\..\Localisation\Garupan.Localisation\Garupan.Localisation.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Garupan.Sim</RootNamespace>
+    <AssemblyName>Garupan.Sim</AssemblyName>
+    <Description>Deterministic simulation core: ECS, fixed-step loop, command buffer, system pipeline. Engine-agnostic, headless-runnable. NO renderer / host references.</Description>
+  </PropertyGroup>
+
+  <ItemGroup Label="Sim is sacred — only Foundation, Content, Localisation, Persistence (snapshot) are allowed">
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Foundation\Opus.Foundation\Opus.Foundation.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Content\Opus.Content\Opus.Content.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Localisation\Opus.Localisation\Opus.Localisation.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Persistence\Opus.Persistence\Opus.Persistence.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Physics\Opus.Engine.Physics.csproj" />
+    <ProjectReference Include="..\..\Content\Garupan.Content\Garupan.Content.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Arch" />
+  </ItemGroup>
+
+</Project>

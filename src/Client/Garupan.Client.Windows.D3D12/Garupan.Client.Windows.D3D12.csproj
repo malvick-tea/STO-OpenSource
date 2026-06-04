@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Garupan.Client.Windows.Direct3D12</RootNamespace>
+    <AssemblyName>Garupan.Client.Windows.D3D12</AssemblyName>
+    <Description>Runtime Windows client running on the D3D12 host adapter. Composes through Opus.Engine.Pal.Windows.Direct3D12 (D3D12WindowSession + D3D12UiFrameLoop) and Opus.Engine.Ui.Direct3D12 (D3D12DrawSurface). Screens render against the IDrawSurface contract. This is the sole runtime client.</Description>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Foundation\Opus.Foundation\Opus.Foundation.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Content\Opus.Content\Opus.Content.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Localisation\Opus.Localisation\Opus.Localisation.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Audio\Opus.Engine.Audio.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Audio.Raylib\Opus.Engine.Audio.Raylib.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Input\Opus.Engine.Input.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Input.Sdl3\Opus.Engine.Input.Sdl3.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Pal\Opus.Engine.Pal.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Pal.Sdl3\Opus.Engine.Pal.Sdl3.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Pal.Windows\Opus.Engine.Pal.Windows.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Pal.Windows.Direct3D12\Opus.Engine.Pal.Windows.Direct3D12.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Rhi\Opus.Engine.Rhi.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Rhi.D3D12\Opus.Engine.Rhi.D3D12.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Renderer\Opus.Engine.Renderer.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Renderer.Direct3D12\Opus.Engine.Renderer.Direct3D12.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Ui\Opus.Engine.Ui.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Engine\Opus.Engine.Ui.Direct3D12\Opus.Engine.Ui.Direct3D12.csproj" />
+    <ProjectReference Include="..\Garupan.Client.Core\Garupan.Client.Core.csproj" />
+    <ProjectReference Include="..\Garupan.Client.Ui\Garupan.Client.Ui.csproj" />
+    <ProjectReference Include="..\Garupan.Client.Windows.Bootstrap\Garupan.Client.Windows.Bootstrap.csproj" />
+    <ProjectReference Include="..\..\Content\Garupan.Content\Garupan.Content.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Extensions.Logging" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.File" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Garupan.Client.Windows.D3D12.Tests" />
+  </ItemGroup>
+
+</Project>

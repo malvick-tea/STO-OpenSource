@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Garupan.Server.Match</RootNamespace>
+    <AssemblyName>Garupan.Server.Match</AssemblyName>
+    <Description>Authoritative match host. Composes a Garupan.Sim deterministic World + FixedStepLoop + canonical Phase-0 pipeline with a Opus.Net transport + Garupan.Net.Session router so a server process can run a tickloop, accept network peers, apply their inputs, and broadcast world snapshots. Transport-agnostic — the host consumes INetTransport so tests drive it via LoopbackTransportPair and a future UDP transport drops in unchanged. Phase 32 brick of the local test multiplayer build.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Foundation\Opus.Foundation\Opus.Foundation.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Content\Opus.Content\Opus.Content.csproj" />
+    <ProjectReference Include="..\..\Sim\Garupan.Sim\Garupan.Sim.csproj" />
+    <ProjectReference Include="..\..\..\..\OpusOpenSource\src\Net\Opus.Net\Opus.Net.csproj" />
+    <ProjectReference Include="..\..\Net\Garupan.Net.Session\Garupan.Net.Session.csproj" />
+    <ProjectReference Include="..\..\Content\Garupan.Content\Garupan.Content.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Garupan.Server.Match.Tests" />
+  </ItemGroup>
+
+</Project>
