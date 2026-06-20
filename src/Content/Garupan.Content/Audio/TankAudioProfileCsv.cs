@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Garupan.Content.Validation;
 
 namespace Garupan.Content;
 
@@ -93,17 +94,17 @@ public static class TankAudioProfileCsv
 
         var id = RequireNonEmpty(cells[0], row, "tank_id");
         var profile = new TankAudioProfile(
-            EngineStartPath: RequireNonEmpty(cells[1], row, "engine_start"),
-            EngineStopPath: RequireNonEmpty(cells[2], row, "engine_stop"),
-            EngineRevUpPath: RequireNonEmpty(cells[3], row, "engine_rev_up"),
-            EngineRevDownPath: RequireNonEmpty(cells[4], row, "engine_rev_down"),
-            EngineIdlePath: RequireNonEmpty(cells[5], row, "engine_idle"),
-            EngineHighPath: RequireNonEmpty(cells[6], row, "engine_high"),
-            TracksPath: RequireNonEmpty(cells[7], row, "tracks"),
-            GroundEffectPath: RequireNonEmpty(cells[8], row, "ground_effect"),
-            TurretPath: RequireNonEmpty(cells[9], row, "turret"),
-            GunPath: RequireNonEmpty(cells[10], row, "gun"),
-            ReloadPath: RequireNonEmpty(cells[11], row, "reload"),
+            EngineStartPath: ContentResourcePath.Require(cells[1], row, "engine_start"),
+            EngineStopPath: ContentResourcePath.Require(cells[2], row, "engine_stop"),
+            EngineRevUpPath: ContentResourcePath.Require(cells[3], row, "engine_rev_up"),
+            EngineRevDownPath: ContentResourcePath.Require(cells[4], row, "engine_rev_down"),
+            EngineIdlePath: ContentResourcePath.Require(cells[5], row, "engine_idle"),
+            EngineHighPath: ContentResourcePath.Require(cells[6], row, "engine_high"),
+            TracksPath: ContentResourcePath.Require(cells[7], row, "tracks"),
+            GroundEffectPath: ContentResourcePath.Require(cells[8], row, "ground_effect"),
+            TurretPath: ContentResourcePath.Require(cells[9], row, "turret"),
+            GunPath: ContentResourcePath.Require(cells[10], row, "gun"),
+            ReloadPath: ContentResourcePath.Require(cells[11], row, "reload"),
             IsDefault: RequireBoolean(cells[12], row, "is_default"));
         return (id, profile);
     }

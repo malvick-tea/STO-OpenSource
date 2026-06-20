@@ -1,5 +1,7 @@
 using System;
+using System.Buffers;
 using System.IO;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -27,16 +29,21 @@ internal sealed class FramedBlobStore<TBody>
     private readonly IBinaryCodec _codec;
     private readonly IClock _clock;
     private readonly BuildInfo _buildInfo;
+    private readonly ISaveIntegrityKeyProvider _integrityKeyProvider;
     private readonly ILogger _logger;
     private readonly string _path;
     private readonly int _schemaVersion;
     private readonly string _label;
+    private readonly byte[] _domain;
+    private readonly object _saveLock = new();
+    private Task _saveTail = Task.CompletedTask;
 
     public FramedBlobStore(
         IVfs vfs,
         IBinaryCodec codec,
         IClock clock,
         BuildInfo buildInfo,
+        ISaveIntegrityKeyProvider integrityKeyProvider,
         string path,
         int schemaVersion,
         string label,
@@ -46,6 +53,7 @@ internal sealed class FramedBlobStore<TBody>
         ArgumentNullException.ThrowIfNull(codec);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(buildInfo);
+        ArgumentNullException.ThrowIfNull(integrityKeyProvider);
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
@@ -53,10 +61,17 @@ internal sealed class FramedBlobStore<TBody>
         _codec = codec;
         _clock = clock;
         _buildInfo = buildInfo;
+        _integrityKeyProvider = integrityKeyProvider;
         _logger = logger;
         _path = path;
         _schemaVersion = schemaVersion;
         _label = label;
+        // Domain separation: each blob type derives an independent MAC key
+        // from the shared install key, so a tampered settings frame cannot be
+        // replayed as a progress frame (or vice versa) even if the install
+        // key is identical. Schema version is folded in so a v1 frame cannot
+        // be replayed against a v2 schema after a migration.
+        _domain = System.Text.Encoding.UTF8.GetBytes($"Opus.Save.{label}.v{schemaVersion}");
     }
 
     public string Path => _path;
@@ -73,17 +88,45 @@ internal sealed class FramedBlobStore<TBody>
         try
         {
             using var stream = _vfs.OpenRead(_path);
-            using var ms = new MemoryStream();
-            await stream.CopyToAsync(ms, ct).ConfigureAwait(false);
-            frame = ms.ToArray();
+            frame = await ReadBoundedFrameAsync(stream, ct).ConfigureAwait(false);
         }
         catch (IOException ex)
         {
             _logger.LogError(ex, "{Label}: failed to read {Path}; resetting.", _label, _path);
             return FramedLoadOutcome<TBody>.IoError();
         }
+        catch (InvalidDataException ex)
+        {
+            _logger.LogWarning(ex, "{Label}: oversized frame at {Path}; resetting.", _label, _path);
+            return FramedLoadOutcome<TBody>.Corrupt();
+        }
 
-        var read = SaveHeaderSerializer.ReadFrame<TBody>(frame, _codec);
+        ReadOnlyMemory<byte> authenticationKey;
+        try
+        {
+            authenticationKey = await _integrityKeyProvider.GetKeyAsync(ct).ConfigureAwait(false);
+        }
+        catch (System.Security.Cryptography.CryptographicException ex)
+        {
+            // DPAPI can throw when the user profile is corrupt, when the
+            // wrapped key blob is transferred across users, or when roaming
+            // profile replication truncated the file. The save path already
+            // catches this in SaveCoreAsync; mirroring the behaviour here
+            // keeps the load path resilient — the player sees a fresh empty
+            // blob instead of a boot-time crash they cannot recover from.
+            _logger.LogCritical(
+                ex,
+                "{Label}: integrity-key failure while loading {Path}; resetting.",
+                _label,
+                _path);
+            return FramedLoadOutcome<TBody>.Corrupt();
+        }
+
+        var read = SaveHeaderSerializer.ReadFrame<TBody>(
+            frame,
+            _codec,
+            authenticationKey.Span,
+            _domain);
         if (read.IsErr)
         {
             _logger.LogWarning(
@@ -104,22 +147,88 @@ internal sealed class FramedBlobStore<TBody>
         return FramedLoadOutcome<TBody>.Loaded(body);
     }
 
-    public async Task SaveAsync(TBody body, CancellationToken ct)
+    public Task SaveAsync(TBody body, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(body);
+        lock (_saveLock)
+        {
+            _saveTail = _saveTail.ContinueWith(
+                    _ => SaveCoreAsync(body, ct),
+                    CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default)
+                .Unwrap();
+            return _saveTail;
+        }
+    }
+
+    private async Task SaveCoreAsync(TBody body, CancellationToken ct)
+    {
         try
         {
             var header = SaveHeader.Current(
                 schemaVersion: _schemaVersion,
                 appVersion: _buildInfo.Version,
                 unixMs: _clock.UtcUnixMilliseconds());
-            var frame = SaveHeaderSerializer.WriteFrame(header, body, _codec);
+            var authenticationKey = await _integrityKeyProvider.GetKeyAsync(ct).ConfigureAwait(false);
+            var frame = SaveHeaderSerializer.WriteFrame(
+                header,
+                body,
+                _codec,
+                authenticationKey.Span,
+                _domain);
             await _vfs.WriteAllBytesAtomicAsync(_path, frame, ct).ConfigureAwait(false);
             _logger.LogDebug("{Label}: saved to {Path}.", _label, _path);
         }
         catch (IOException ex)
         {
             _logger.LogError(ex, "{Label}: failed to persist {Path}.", _label, _path);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogError(ex, "{Label}: access denied while persisting {Path}.", _label, _path);
+        }
+        catch (CryptographicException ex)
+        {
+            _logger.LogCritical(ex, "{Label}: integrity-key failure while persisting {Path}.", _label, _path);
+        }
+    }
+
+    private static async Task<byte[]> ReadBoundedFrameAsync(
+        Stream stream,
+        CancellationToken cancellationToken)
+    {
+        if (stream.CanSeek && stream.Length > SaveHeaderSerializer.MaxFrameBytes)
+        {
+            throw new InvalidDataException(
+                $"Save frame exceeds the {SaveHeaderSerializer.MaxFrameBytes}-byte limit.");
+        }
+
+        var initialCapacity = stream.CanSeek ? checked((int)stream.Length) : 0;
+        using var output = new MemoryStream(initialCapacity);
+        var buffer = ArrayPool<byte>.Shared.Rent(81920);
+        try
+        {
+            while (true)
+            {
+                var read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                if (read == 0)
+                {
+                    return output.ToArray();
+                }
+
+                if (output.Length + read > SaveHeaderSerializer.MaxFrameBytes)
+                {
+                    throw new InvalidDataException(
+                        $"Save frame exceeds the {SaveHeaderSerializer.MaxFrameBytes}-byte limit.");
+                }
+
+                output.Write(buffer, 0, read);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
         }
     }
 }

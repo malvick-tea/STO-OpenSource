@@ -60,27 +60,55 @@ internal sealed class D3D12ModelLoader : IModelLoader, IDisposable
         var realPath = _vfs.Realize(virtualPath);
         var instanceId = System.Threading.Interlocked.Increment(ref _instanceCounter);
         var namePrefix = $"{GpuNamePrefix}.{instanceId}";
+        GltfSceneGpuAssets? assets = null;
+        MultiMaterialAtlas? atlas = null;
+        D3D12Model? model = null;
         try
         {
-            var assets = D3D12GltfSceneLoader.Load(_device, realPath, namePrefix);
-            var atlas = MultiMaterialAtlasBuilder.BuildFromGlb(_device, assets.GlbBytes, namePrefix);
-            var model = D3D12Model.From(assets, atlas);
+            var loadedAssets = D3D12GltfSceneLoader.Load(_device, realPath, namePrefix);
+            assets = loadedAssets;
+            var loadedAtlas = MultiMaterialAtlasBuilder.BuildFromGlb(
+                _device,
+                loadedAssets.GlbBytes,
+                namePrefix);
+            atlas = loadedAtlas;
+            model = D3D12Model.From(loadedAssets, loadedAtlas);
+            assets = null;
+            atlas = null;
             _cache[virtualPath] = model;
             _logger.LogInformation(
                 "Loaded model {Path}: bounds=[{Min} .. {Max}], {Primitives} primitives, {Materials} materials, {UniqueImages} unique textures.",
                 virtualPath,
                 model.BoundsMin,
                 model.BoundsMax,
-                assets.GpuScene.Primitives.Length,
-                atlas.MaterialCount,
-                atlas.UniqueImageCount);
+                loadedAssets.GpuScene.Primitives.Length,
+                loadedAtlas.MaterialCount,
+                loadedAtlas.UniqueImageCount);
             return model;
         }
         catch (Exception ex)
         {
+            _cache.Remove(virtualPath);
+            model?.Dispose();
+            atlas?.Dispose();
+            DisposeGpuScene(assets?.GpuScene);
             _logger.LogError(ex, "D3D12 glTF loader failed for {Path}; rendering will be no-op.", realPath);
             _cache[virtualPath] = D3D12Model.Invalid;
             return D3D12Model.Invalid;
+        }
+    }
+
+    private static void DisposeGpuScene(GpuScene? scene)
+    {
+        if (scene is null)
+        {
+            return;
+        }
+
+        foreach (var primitive in scene.Primitives)
+        {
+            primitive.Ib.Dispose();
+            primitive.Vb.Dispose();
         }
     }
 

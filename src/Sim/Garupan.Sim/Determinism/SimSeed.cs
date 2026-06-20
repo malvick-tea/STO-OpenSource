@@ -1,12 +1,11 @@
 namespace Garupan.Sim;
 
 /// <summary>
-/// 64-bit deterministic seed identifying a simulation run. Hash of (mission_id,
-/// replay_nonce, player_profile_id) — same triple always produces the same seed,
-/// and the same seed always produces a bit-identical replay.
+/// 64-bit deterministic seed identifying a simulation run. The caller owns seed
+/// derivation; equal seeds and equal inputs must produce bit-identical simulation output.
 ///
-/// Stored as a value type so it crosses the Sim → Persistence boundary by-value
-/// without any reference-equality footguns.
+/// Stored as a value type so it crosses the simulation and persistence boundary by value
+/// without reference-identity ambiguity.
 /// </summary>
 public readonly record struct SimSeed(ulong Value)
 {

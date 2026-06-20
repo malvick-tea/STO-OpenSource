@@ -28,6 +28,7 @@ public sealed class SettingsServiceTests
             new MemoryPackCodec(),
             clock,
             TestBuildInfo,
+            PersistenceTestEnvironment.IntegrityKeyProvider,
             NullLogger<SettingsService>.Instance);
         return (service, vfs, clock);
     }
@@ -55,6 +56,7 @@ public sealed class SettingsServiceTests
             new MemoryPackCodec(),
             clock,
             TestBuildInfo,
+            PersistenceTestEnvironment.IntegrityKeyProvider,
             NullLogger<SettingsService>.Instance);
         await second.LoadAsync(CancellationToken.None);
 
@@ -114,6 +116,7 @@ public sealed class SettingsServiceTests
             new MemoryPackCodec(),
             new FakeClock(),
             TestBuildInfo,
+            PersistenceTestEnvironment.IntegrityKeyProvider,
             NullLogger<SettingsService>.Instance);
 
         await service.LoadAsync(CancellationToken.None);
@@ -126,13 +129,18 @@ public sealed class SettingsServiceTests
     {
         var vfs = new InMemoryVfs();
         var alienHeader = new SaveHeader("ALIEN", SchemaVersion: 1, TestBuildInfo.Version, CreatedAtUnixMs: 0);
-        var alienFrame = SaveHeaderSerializer.WriteFrame(alienHeader, AppSettings.Default with { Locale = "fr" }, new MemoryPackCodec());
+        var alienFrame = SaveHeaderSerializer.WriteFrame(
+            alienHeader,
+            AppSettings.Default with { Locale = "fr" },
+            new MemoryPackCodec(),
+            PersistenceTestEnvironment.IntegrityKey);
         await vfs.WriteAllBytesAtomicAsync(SettingsService.SettingsPath, alienFrame, CancellationToken.None);
         var service = new SettingsService(
             vfs,
             new MemoryPackCodec(),
             new FakeClock(),
             TestBuildInfo,
+            PersistenceTestEnvironment.IntegrityKeyProvider,
             NullLogger<SettingsService>.Instance);
 
         await service.LoadAsync(CancellationToken.None);
@@ -146,13 +154,18 @@ public sealed class SettingsServiceTests
     {
         var vfs = new InMemoryVfs();
         var futureHeader = SaveHeader.Current(schemaVersion: SaveSchemas.Settings + 100, TestBuildInfo.Version, unixMs: 0);
-        var futureFrame = SaveHeaderSerializer.WriteFrame(futureHeader, AppSettings.Default with { Locale = "de" }, new MemoryPackCodec());
+        var futureFrame = SaveHeaderSerializer.WriteFrame(
+            futureHeader,
+            AppSettings.Default with { Locale = "de" },
+            new MemoryPackCodec(),
+            PersistenceTestEnvironment.IntegrityKey);
         await vfs.WriteAllBytesAtomicAsync(SettingsService.SettingsPath, futureFrame, CancellationToken.None);
         var service = new SettingsService(
             vfs,
             new MemoryPackCodec(),
             new FakeClock(),
             TestBuildInfo,
+            PersistenceTestEnvironment.IntegrityKeyProvider,
             NullLogger<SettingsService>.Instance);
 
         await service.LoadAsync(CancellationToken.None);
@@ -167,7 +180,10 @@ public sealed class SettingsServiceTests
         await service.LoadAsync(CancellationToken.None);
 
         var blob = vfs.Files[SettingsService.SettingsPath];
-        var read = SaveHeaderSerializer.ReadFrame<AppSettings>(blob, new MemoryPackCodec());
+        var read = SaveHeaderSerializer.ReadFrame<AppSettings>(
+            blob,
+            new MemoryPackCodec(),
+            PersistenceTestEnvironment.IntegrityKey);
 
         read.IsOk.Should().BeTrue();
         var (header, body) = read.Unwrap();
@@ -189,7 +205,10 @@ public sealed class SettingsServiceTests
         // Apply kicks off a fire-and-forget SaveAsync; await the in-memory write completes synchronously here.
         await service.SaveAsync(CancellationToken.None);
         var blob = vfs.Files[SettingsService.SettingsPath];
-        var read = SaveHeaderSerializer.ReadFrame<AppSettings>(blob, new MemoryPackCodec());
+        var read = SaveHeaderSerializer.ReadFrame<AppSettings>(
+            blob,
+            new MemoryPackCodec(),
+            PersistenceTestEnvironment.IntegrityKey);
 
         read.IsOk.Should().BeTrue();
         read.Unwrap().Body.SfxVolume.Should().Be(0.42f);
@@ -203,7 +222,10 @@ public sealed class SettingsServiceTests
 
         await service.LoadAsync(CancellationToken.None);
         var blob = vfs.Files[SettingsService.SettingsPath];
-        var read = SaveHeaderSerializer.ReadFrame<AppSettings>(blob, new MemoryPackCodec());
+        var read = SaveHeaderSerializer.ReadFrame<AppSettings>(
+            blob,
+            new MemoryPackCodec(),
+            PersistenceTestEnvironment.IntegrityKey);
 
         read.Unwrap().Header.CreatedAtUnixMs.Should().Be(2_000_000L);
     }
@@ -220,6 +242,7 @@ public sealed class SettingsServiceTests
             new MemoryPackCodec(),
             clock,
             TestBuildInfo,
+            PersistenceTestEnvironment.IntegrityKeyProvider,
             NullLogger<SettingsService>.Instance);
         await second.LoadAsync(CancellationToken.None);
 
@@ -240,6 +263,7 @@ public sealed class SettingsServiceTests
             new MemoryPackCodec(),
             clock,
             TestBuildInfo,
+            PersistenceTestEnvironment.IntegrityKeyProvider,
             NullLogger<SettingsService>.Instance);
         await second.LoadAsync(CancellationToken.None);
 

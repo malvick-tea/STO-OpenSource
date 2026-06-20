@@ -20,6 +20,7 @@ namespace Garupan.Sim.Terrain;
 public sealed class TerrainHeightField : IHeightSurface
 {
     private const int HeaderBytes = 28;
+    private const int MaxGridSize = 8192;
 
     private readonly float[] _heights;
     private readonly int _n;
@@ -32,7 +33,9 @@ public sealed class TerrainHeightField : IHeightSurface
         ArgumentOutOfRangeException.ThrowIfLessThan(gridSize, 2);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(worldSizeMeters);
         ArgumentNullException.ThrowIfNull(heights);
-        if (heights.Length != gridSize * gridSize)
+        if (!float.IsFinite(worldSizeMeters)
+            || gridSize > MaxGridSize
+            || heights.LongLength != (long)gridSize * gridSize)
         {
             throw new ArgumentException("Height count must equal gridSize squared.", nameof(heights));
         }
@@ -65,17 +68,26 @@ public sealed class TerrainHeightField : IHeightSurface
 
         var n = BinaryPrimitives.ReadInt32LittleEndian(bytes[8..]);
         var world = BinaryPrimitives.ReadSingleLittleEndian(bytes[12..]);
-        var count = n * n;
-        if (n < 2 || world <= 0f || bytes.Length < HeaderBytes + (count * sizeof(float)))
+        var count = (long)n * n;
+        var requiredBytes = HeaderBytes + (count * sizeof(float));
+        if (n is < 2 or > MaxGridSize
+            || !float.IsFinite(world)
+            || world <= 0f
+            || requiredBytes != bytes.Length)
         {
             throw new InvalidDataException("Corrupt GTHF header or truncated height data.");
         }
 
-        var heights = new float[count];
-        var data = bytes.Slice(HeaderBytes, count * sizeof(float));
-        for (var i = 0; i < count; i++)
+        var count32 = checked((int)count);
+        var heights = new float[count32];
+        var data = bytes.Slice(HeaderBytes, checked(count32 * sizeof(float)));
+        for (var i = 0; i < count32; i++)
         {
             heights[i] = BinaryPrimitives.ReadSingleLittleEndian(data[(i * sizeof(float))..]);
+            if (!float.IsFinite(heights[i]))
+            {
+                throw new InvalidDataException("GTHF contains a non-finite height value.");
+            }
         }
 
         return new TerrainHeightField(n, world, heights);

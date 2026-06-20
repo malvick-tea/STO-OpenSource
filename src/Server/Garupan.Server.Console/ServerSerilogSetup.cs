@@ -22,10 +22,12 @@ public static class ServerSerilogSetup
     /// <see cref="ILoggerFactory"/> wired to it. The caller owns the returned factory and
     /// must dispose it on shutdown — disposing flushes any buffered console / file
     /// writes.</summary>
-    public static ILoggerFactory Configure(bool fileSinkEnabled)
+    public static ILoggerFactory Configure(
+        bool fileSinkEnabled,
+        LogEventLevel minimumLevel = LogEventLevel.Information)
     {
         var config = new LoggerConfiguration()
-            .MinimumLevel.Is(LogEventLevel.Debug)
+            .MinimumLevel.Is(minimumLevel)
             .Enrich.WithProperty("Pid", Environment.ProcessId)
             .WriteTo.Console(
                 outputTemplate: "{Timestamp:HH:mm:ss.fff} [{Level:u3}] {SourceContext} {Message:lj}{NewLine}{Exception}",

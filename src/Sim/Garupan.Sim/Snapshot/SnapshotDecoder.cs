@@ -9,10 +9,8 @@ namespace Garupan.Sim.Snapshot;
 
 /// <summary>
 /// Parses a wire-format byte sequence (see <see cref="SnapshotWire"/>) back into a
-/// <see cref="WorldSnapshot"/>. Tolerates trailing bytes past the declared payload so
-/// the codec can sit behind a higher-level framing layer that stashes multiple
-/// snapshots back-to-back; rejects truncated input, bad magic, version mismatches, and
-/// declared counts that exceed the buffer.
+/// <see cref="WorldSnapshot"/>. Rejects trailing bytes, truncated input, bad magic,
+/// version mismatches, invalid values, and declared counts that exceed the buffer.
 ///
 /// On failure <paramref name="snap"/> is set to an empty snapshot — a partial parse
 /// must never leak to the caller because a half-filled snapshot looks identical to a
@@ -27,7 +25,8 @@ public static class SnapshotDecoder
     {
         snap = Empty;
 
-        if (bytes.Length < SnapshotWire.HeaderBytes)
+        if (bytes.Length < SnapshotWire.HeaderBytes
+            || bytes.Length > SnapshotWire.MaxEncodedBytes)
         {
             return SnapshotCodecResult.Fail("snapshot: truncated header");
         }
@@ -44,7 +43,16 @@ public static class SnapshotDecoder
         }
 
         var tickValue = BinaryPrimitives.ReadUInt64LittleEndian(bytes[8..]);
+        if (tickValue > long.MaxValue)
+        {
+            return SnapshotCodecResult.Fail("snapshot: tick exceeds the supported range");
+        }
+
         var entityCount = BinaryPrimitives.ReadUInt32LittleEndian(bytes[16..]);
+        if (entityCount > SnapshotWire.MaxEntities)
+        {
+            return SnapshotCodecResult.Fail("snapshot: entity count exceeds safety limit");
+        }
 
         // Multiply in long to avoid uint32 overflow before the bounds compare.
         var afterEntities = SnapshotWire.HeaderBytes + ((long)entityCount * SnapshotWire.EntityBytes);
@@ -57,18 +65,31 @@ public static class SnapshotDecoder
         var cursor = SnapshotWire.HeaderBytes;
         for (var i = 0u; i < entityCount; i++)
         {
+            var entityId = BinaryPrimitives.ReadUInt32LittleEndian(bytes[(cursor + 0)..]);
+            var stateFlags = BinaryPrimitives.ReadUInt32LittleEndian(bytes[(cursor + 20)..]);
+            if (entityId > int.MaxValue
+                || (stateFlags & ~(uint)EntityStateFlags.KnockedOut) != 0)
+            {
+                return SnapshotCodecResult.Fail("snapshot: entity row contains invalid identity or flags");
+            }
+
             entities.Add(new EntitySnapshot(
-                Id: (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[(cursor + 0)..]),
+                Id: (int)entityId,
                 Position: new Vector2(
                     BinaryPrimitives.ReadSingleLittleEndian(bytes[(cursor + 4)..]),
                     BinaryPrimitives.ReadSingleLittleEndian(bytes[(cursor + 8)..])),
                 YawRadians: BinaryPrimitives.ReadSingleLittleEndian(bytes[(cursor + 12)..]),
                 TurretYawRadians: BinaryPrimitives.ReadSingleLittleEndian(bytes[(cursor + 16)..]),
-                StateFlags: (EntityStateFlags)BinaryPrimitives.ReadUInt32LittleEndian(bytes[(cursor + 20)..]),
+                StateFlags: (EntityStateFlags)stateFlags,
                 BarrelPitchRadians: BinaryPrimitives.ReadSingleLittleEndian(bytes[(cursor + 24)..]),
                 MinBarrelPitchRadians: BinaryPrimitives.ReadSingleLittleEndian(bytes[(cursor + 28)..]),
                 MaxBarrelPitchRadians: BinaryPrimitives.ReadSingleLittleEndian(bytes[(cursor + 32)..]),
                 GunRecoilTravelMeters: BinaryPrimitives.ReadSingleLittleEndian(bytes[(cursor + 36)..])));
+            if (!SnapshotValuesAreFinite(entities[^1]))
+            {
+                return SnapshotCodecResult.Fail("snapshot: entity row contains non-finite values");
+            }
+
             cursor += SnapshotWire.EntityBytes;
         }
 
@@ -80,6 +101,11 @@ public static class SnapshotDecoder
         }
 
         var projectileCount = BinaryPrimitives.ReadUInt32LittleEndian(bytes[cursor..]);
+        if (projectileCount > SnapshotWire.MaxProjectiles)
+        {
+            return SnapshotCodecResult.Fail("snapshot: projectile count exceeds safety limit");
+        }
+
         cursor += SnapshotWire.ProjectileCountBytes;
 
         var projectileRequired = afterEntities
@@ -97,9 +123,15 @@ public static class SnapshotDecoder
             // land as an out-of-range enumerator that the consumer treats as the
             // fallback (matches C++ behaviour).
             var familyByte = bytes[cursor + 20];
+            var projectileId = BinaryPrimitives.ReadUInt32LittleEndian(bytes[(cursor + 0)..]);
+            var ownerEntityId = BinaryPrimitives.ReadUInt32LittleEndian(bytes[(cursor + 45)..]);
+            if (projectileId > int.MaxValue || ownerEntityId > int.MaxValue)
+            {
+                return SnapshotCodecResult.Fail("snapshot: projectile row contains invalid identity");
+            }
 
             projectiles.Add(new ProjectileSnapshot(
-                Id: (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[(cursor + 0)..]),
+                Id: (int)projectileId,
                 Position: new Vector2(
                     BinaryPrimitives.ReadSingleLittleEndian(bytes[(cursor + 4)..]),
                     BinaryPrimitives.ReadSingleLittleEndian(bytes[(cursor + 8)..])),
@@ -114,7 +146,12 @@ public static class SnapshotDecoder
                     BinaryPrimitives.ReadSingleLittleEndian(bytes[(cursor + 33)..]),
                     BinaryPrimitives.ReadSingleLittleEndian(bytes[(cursor + 37)..])),
                 LaunchVisualHeightMeters: BinaryPrimitives.ReadSingleLittleEndian(bytes[(cursor + 41)..]),
-                OwnerEntityId: (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[(cursor + 45)..])));
+                OwnerEntityId: (int)ownerEntityId));
+            if (!SnapshotValuesAreFinite(projectiles[^1]))
+            {
+                return SnapshotCodecResult.Fail("snapshot: projectile row contains non-finite values");
+            }
+
             cursor += SnapshotWire.ProjectileBytes;
         }
 
@@ -122,6 +159,11 @@ public static class SnapshotDecoder
         if (!propResult.Ok)
         {
             return propResult;
+        }
+
+        if (cursor != bytes.Length)
+        {
+            return SnapshotCodecResult.Fail("snapshot: trailing bytes");
         }
 
         snap = new WorldSnapshot(new Tick((long)tickValue), entities, projectiles) { Props = props };
@@ -146,6 +188,11 @@ public static class SnapshotDecoder
         }
 
         var propCount = BinaryPrimitives.ReadUInt32LittleEndian(bytes[cursor..]);
+        if (propCount > SnapshotWire.MaxProps)
+        {
+            return SnapshotCodecResult.Fail("snapshot: prop count exceeds safety limit");
+        }
+
         cursor += SnapshotWire.PropCountBytes;
 
         var required = afterProjectiles + SnapshotWire.PropCountBytes + ((long)propCount * SnapshotWire.PropBytes);
@@ -162,11 +209,24 @@ public static class SnapshotDecoder
         var rows = new List<PropSnapshot>((int)propCount);
         for (var i = 0u; i < propCount; i++)
         {
+            var propId = BinaryPrimitives.ReadUInt32LittleEndian(bytes[(cursor + 0)..]);
+            if (propId > int.MaxValue)
+            {
+                return SnapshotCodecResult.Fail("snapshot: prop row contains invalid identity");
+            }
+
             rows.Add(new PropSnapshot(
-                PropId: (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[(cursor + 0)..]),
+                PropId: (int)propId,
                 State: (PropState)bytes[cursor + 4],
                 FallYawRadians: BinaryPrimitives.ReadSingleLittleEndian(bytes[(cursor + 5)..]),
                 ToppleSeconds: BinaryPrimitives.ReadSingleLittleEndian(bytes[(cursor + 9)..])));
+            if (!float.IsFinite(rows[^1].FallYawRadians)
+                || !float.IsFinite(rows[^1].ToppleSeconds)
+                || !Enum.IsDefined(rows[^1].State))
+            {
+                return SnapshotCodecResult.Fail("snapshot: prop row contains invalid values");
+            }
+
             cursor += SnapshotWire.PropBytes;
         }
 
@@ -178,4 +238,27 @@ public static class SnapshotDecoder
         Tick.Zero,
         Array.Empty<EntitySnapshot>(),
         Array.Empty<ProjectileSnapshot>());
+
+    private static bool SnapshotValuesAreFinite(EntitySnapshot row) =>
+        float.IsFinite(row.Position.X)
+        && float.IsFinite(row.Position.Y)
+        && float.IsFinite(row.YawRadians)
+        && float.IsFinite(row.TurretYawRadians)
+        && float.IsFinite(row.BarrelPitchRadians)
+        && float.IsFinite(row.MinBarrelPitchRadians)
+        && float.IsFinite(row.MaxBarrelPitchRadians)
+        && float.IsFinite(row.GunRecoilTravelMeters);
+
+    private static bool SnapshotValuesAreFinite(ProjectileSnapshot row) =>
+        float.IsFinite(row.Position.X)
+        && float.IsFinite(row.Position.Y)
+        && float.IsFinite(row.Velocity.X)
+        && float.IsFinite(row.Velocity.Y)
+        && float.IsFinite(row.VisualHeightMeters)
+        && float.IsFinite(row.VerticalVelocityMps)
+        && float.IsFinite(row.DistanceTravelledMeters)
+        && float.IsFinite(row.LaunchPosition.X)
+        && float.IsFinite(row.LaunchPosition.Y)
+        && float.IsFinite(row.LaunchVisualHeightMeters)
+        && Enum.IsDefined(row.Family);
 }

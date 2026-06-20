@@ -29,6 +29,7 @@ public static class ServerConsoleEntry
     public const int ExitOptionsError = 2;
     public const int ExitBindError = 3;
     public const int ExitCatalogError = 4;
+    public const int ExitSecurityConfigurationError = 5;
 
     /// <summary>Relative path the bundled match-mode CSV lives at — copied to the exe
     /// output directory by the csproj. Tests override this through the alternate Run
@@ -112,6 +113,16 @@ public static class ServerConsoleEntry
             }
 
             return ExitBindError;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException
+                                   or ArgumentException
+                                   or IOException
+                                   or UnauthorizedAccessException)
+        {
+            logger.LogError("Server security configuration rejected: {Reason}", ex.Message);
+            System.Console.Error.WriteLine(
+                $"sto-server: security configuration rejected: {ex.Message}");
+            return ExitSecurityConfigurationError;
         }
 
         using (bundle)

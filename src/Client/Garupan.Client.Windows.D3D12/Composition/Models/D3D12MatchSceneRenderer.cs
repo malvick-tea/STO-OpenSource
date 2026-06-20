@@ -117,6 +117,7 @@ internal sealed class D3D12MatchSceneRenderer : IMatchSceneRenderer, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _tankAudio?.Stop();
+        _tankMotion.Reset();
     }
 
     public void Dispose()

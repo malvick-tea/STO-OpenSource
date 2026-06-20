@@ -1,6 +1,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Security.Cryptography;
 using Garupan.Sim.Protocol;
 using Garupan.Sim.Snapshot;
 using Opus.Foundation;
@@ -17,59 +18,99 @@ public static class ReplayReader
 {
     public static WireCodecResult TryRead(
         ReadOnlySpan<byte> bytes,
+        ReadOnlySpan<byte> authenticationKey,
         out ReplayHeader header,
         out IReadOnlyList<ReplayFrame> frames)
     {
         header = default;
         frames = Array.Empty<ReplayFrame>();
 
-        if (bytes.Length < ReplayWire.HeaderBytes)
+        if (authenticationKey.Length < ReplayWire.MinimumAuthenticationKeyBytes)
+        {
+            return WireCodecResult.Fail("replay: authentication key is too short");
+        }
+
+        if (bytes.Length < ReplayWire.HeaderBytes + ReplayWire.AuthenticationTagBytes
+            || bytes.Length > ReplayWire.MaxReplayBytes)
         {
             return WireCodecResult.Fail("replay: truncated header");
         }
 
-        if (!bytes[..4].SequenceEqual(ReplayWire.Magic))
+        var payloadLength = bytes.Length - ReplayWire.AuthenticationTagBytes;
+        var payload = bytes[..payloadLength];
+        Span<byte> expectedTag = stackalloc byte[ReplayWire.AuthenticationTagBytes];
+        HMACSHA256.HashData(authenticationKey, payload, expectedTag);
+        if (!CryptographicOperations.FixedTimeEquals(
+                expectedTag,
+                bytes[payloadLength..]))
+        {
+            return WireCodecResult.Fail("replay: authentication failed");
+        }
+
+        if (!payload[..4].SequenceEqual(ReplayWire.Magic))
         {
             return WireCodecResult.Fail("replay: bad magic");
         }
 
-        var version = BinaryPrimitives.ReadUInt32LittleEndian(bytes[4..]);
+        var version = BinaryPrimitives.ReadUInt32LittleEndian(payload[4..]);
         if (version != ReplayWire.Version)
         {
             return WireCodecResult.Fail("replay: version mismatch");
         }
 
-        var tickRateHz = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[8..]);
-        var startTickValue = (long)BinaryPrimitives.ReadUInt64LittleEndian(bytes[12..]);
-        var frameCount = BinaryPrimitives.ReadUInt32LittleEndian(bytes[20..]);
+        var tickRateValue = BinaryPrimitives.ReadUInt32LittleEndian(payload[8..]);
+        var startTickRaw = BinaryPrimitives.ReadUInt64LittleEndian(payload[12..]);
+        var frameCount = BinaryPrimitives.ReadUInt32LittleEndian(payload[20..]);
+        var maxFramesByBuffer = (payload.Length - ReplayWire.HeaderBytes) / ReplayWire.FrameHeaderBytes;
+        if (tickRateValue is 0 or > ReplayWire.MaximumTickRateHz
+            || startTickRaw > long.MaxValue
+            || frameCount > ReplayWire.MaxReplayFrames
+            || frameCount > (uint)maxFramesByBuffer)
+        {
+            return WireCodecResult.Fail("replay: header values exceed safety limits");
+        }
 
-        var output = new List<ReplayFrame>((int)frameCount);
+        var tickRateHz = (int)tickRateValue;
+        var startTickValue = (long)startTickRaw;
+        var output = new List<ReplayFrame>(checked((int)frameCount));
         var cursor = ReplayWire.HeaderBytes;
 
         for (var i = 0u; i < frameCount; i++)
         {
-            if (bytes.Length < cursor + ReplayWire.FrameHeaderBytes)
+            if (payload.Length < cursor + ReplayWire.FrameHeaderBytes)
             {
                 return WireCodecResult.Fail($"replay: truncated frame header at index {i}");
             }
 
-            var tickOffset = BinaryPrimitives.ReadUInt32LittleEndian(bytes[cursor..]);
-            var snapLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[(cursor + 4)..]);
+            var tickOffset = BinaryPrimitives.ReadUInt32LittleEndian(payload[cursor..]);
+            var snapLengthRaw = BinaryPrimitives.ReadUInt32LittleEndian(payload[(cursor + 4)..]);
             cursor += ReplayWire.FrameHeaderBytes;
 
-            if (bytes.Length < cursor + snapLength)
+            if (snapLengthRaw > SnapshotWire.MaxEncodedBytes
+                || (long)cursor + snapLengthRaw > payload.Length)
             {
                 return WireCodecResult.Fail($"replay: declared snapshot length exceeds buffer at frame {i}");
             }
 
-            var snapResult = SnapshotDecoder.TryDecode(bytes.Slice(cursor, snapLength), out var snap);
+            var snapLength = checked((int)snapLengthRaw);
+            var snapResult = SnapshotDecoder.TryDecode(payload.Slice(cursor, snapLength), out var snap);
             if (!snapResult.Ok)
             {
                 return WireCodecResult.Fail($"replay: snapshot at frame {i} did not decode: {snapResult.Error}");
             }
 
             cursor += snapLength;
+            if ((long)tickOffset > long.MaxValue - startTickValue)
+            {
+                return WireCodecResult.Fail($"replay: tick overflow at frame {i}");
+            }
+
             output.Add(new ReplayFrame(new Tick(startTickValue + tickOffset), snap));
+        }
+
+        if (cursor != payload.Length)
+        {
+            return WireCodecResult.Fail("replay: trailing payload bytes");
         }
 
         header = new ReplayHeader(version, tickRateHz, new Tick(startTickValue), output.Count);

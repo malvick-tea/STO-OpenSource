@@ -200,7 +200,7 @@ public sealed class SnapshotCodecRobustnessTests
     }
 
     [Fact]
-    public void Float_boundary_values_survive_round_trip_exactly()
+    public void Finite_float_boundary_values_survive_round_trip_exactly()
     {
         var snap = new WorldSnapshot(
             new Tick(1),
@@ -215,8 +215,8 @@ public sealed class SnapshotCodecRobustnessTests
                 new EntitySnapshot(
                     Id: 2,
                     Position: new Vector2(0f, -0f),
-                    YawRadians: float.PositiveInfinity,
-                    TurretYawRadians: float.NegativeInfinity,
+                    YawRadians: float.MaxValue,
+                    TurretYawRadians: float.MinValue,
                     StateFlags: EntityStateFlags.None),
             },
             Array.Empty<ProjectileSnapshot>());
@@ -232,12 +232,12 @@ public sealed class SnapshotCodecRobustnessTests
 
         decoded.Entities[1].Position.X.Should().Be(0f);
         decoded.Entities[1].Position.Y.Should().Be(-0f);
-        decoded.Entities[1].YawRadians.Should().Be(float.PositiveInfinity);
-        decoded.Entities[1].TurretYawRadians.Should().Be(float.NegativeInfinity);
+        decoded.Entities[1].YawRadians.Should().Be(float.MaxValue);
+        decoded.Entities[1].TurretYawRadians.Should().Be(float.MinValue);
     }
 
     [Fact]
-    public void NaN_survives_round_trip_as_NaN()
+    public void Non_finite_entity_values_are_rejected()
     {
         var snap = new WorldSnapshot(
             new Tick(1),
@@ -254,14 +254,11 @@ public sealed class SnapshotCodecRobustnessTests
 
         var buffer = new byte[SnapshotWire.EncodedSize(snap)];
         SnapshotEncoder.Encode(snap, buffer);
-        SnapshotDecoder.TryDecode(buffer, out var decoded).Ok.Should().BeTrue();
+        var result = SnapshotDecoder.TryDecode(buffer, out var decoded);
 
-        // NaN != NaN by IEEE-754 convention, so direct equality fails. The codec contract
-        // is bit-pattern preservation, which IsNaN verifies.
-        float.IsNaN(decoded.Entities[0].Position.X).Should().BeTrue();
-        float.IsNaN(decoded.Entities[0].Position.Y).Should().BeTrue();
-        float.IsNaN(decoded.Entities[0].YawRadians).Should().BeTrue();
-        float.IsNaN(decoded.Entities[0].TurretYawRadians).Should().BeTrue();
+        result.Ok.Should().BeFalse();
+        result.Error.Should().Contain("non-finite");
+        decoded.Entities.Should().BeEmpty();
     }
 
     [Fact]
@@ -277,6 +274,46 @@ public sealed class SnapshotCodecRobustnessTests
         SnapshotDecoder.TryDecode(buffer, out var decoded).Ok.Should().BeTrue();
 
         decoded.Tick.Value.Should().Be(long.MaxValue);
+    }
+
+    [Fact]
+    public void Decode_rejects_tick_above_signed_range()
+    {
+        var encoded = Encode(EmptySnapshot());
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(
+            encoded.AsSpan(8),
+            ulong.MaxValue);
+
+        var result = SnapshotDecoder.TryDecode(encoded, out _);
+
+        result.Ok.Should().BeFalse();
+        result.Error.Should().Contain("tick");
+    }
+
+    [Fact]
+    public void Decode_rejects_unknown_entity_flags()
+    {
+        var snapshot = new WorldSnapshot(
+            Tick.Zero,
+            new[]
+            {
+                new EntitySnapshot(
+                    1,
+                    Vector2.Zero,
+                    0f,
+                    0f,
+                    EntityStateFlags.None),
+            },
+            Array.Empty<ProjectileSnapshot>());
+        var encoded = Encode(snapshot);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(
+            encoded.AsSpan(SnapshotWire.HeaderBytes + 20),
+            0x8000_0000u);
+
+        var result = SnapshotDecoder.TryDecode(encoded, out _);
+
+        result.Ok.Should().BeFalse();
+        result.Error.Should().Contain("flags");
     }
 
     private static void AssertEntityRoundTrip(EntitySnapshot expected, EntitySnapshot actual)
@@ -305,5 +342,17 @@ public sealed class SnapshotCodecRobustnessTests
         actual.VerticalVelocityMps.Should().Be(expected.VerticalVelocityMps);
         actual.DistanceTravelledMeters.Should().Be(expected.DistanceTravelledMeters);
         actual.OwnerEntityId.Should().Be(expected.OwnerEntityId);
+    }
+
+    private static WorldSnapshot EmptySnapshot() => new(
+        Tick.Zero,
+        Array.Empty<EntitySnapshot>(),
+        Array.Empty<ProjectileSnapshot>());
+
+    private static byte[] Encode(WorldSnapshot snapshot)
+    {
+        var bytes = new byte[SnapshotWire.EncodedSize(snapshot)];
+        SnapshotEncoder.Encode(snapshot, bytes);
+        return bytes;
     }
 }

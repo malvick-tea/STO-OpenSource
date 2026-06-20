@@ -25,7 +25,7 @@ public sealed class SchoolPaletteTests
         rival_delta,0.85,0.88,0.95,1.0,winter camo
         rival_echo,0.55,0.55,0.62,1.0,DarkGrey
         rival_foxtrot,0.85,0.92,0.58,1.0,olive-green
-        bcfreedom,1.0,0.9,0.58,1.0,yellow-khaki
+        rival_golf,1.0,0.9,0.58,1.0,yellow-khaki
         """;
 
     [Fact]

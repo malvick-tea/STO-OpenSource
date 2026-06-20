@@ -32,10 +32,24 @@ public sealed class ServerConsoleOptionsParserTests
     [Fact]
     public void Bind_flag_overrides_default_address()
     {
-        var result = ServerConsoleOptionsParser.Parse(Args("--bind", "0.0.0.0"));
+        var result = ServerConsoleOptionsParser.Parse(
+            Args("--bind", "0.0.0.0", "--public"));
 
         var ok = result.Should().BeOfType<ServerConsoleOptionsParser.ParseResult.Ok>().Subject;
         ok.Options.ListenEndpoint.Address.Should().Be(IPAddress.Any);
+        ok.Options.AllowPublicBind.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Public_bind_requires_explicit_acknowledgement()
+    {
+        var result = ServerConsoleOptionsParser.Parse(
+            Args("--bind", "0.0.0.0"));
+
+        var failed = result.Should()
+            .BeOfType<ServerConsoleOptionsParser.ParseResult.Failed>()
+            .Subject;
+        failed.Diagnostic.Should().Contain("--public");
     }
 
     [Fact]
@@ -57,6 +71,24 @@ public sealed class ServerConsoleOptionsParserTests
 
         var ok = result.Should().BeOfType<ServerConsoleOptionsParser.ParseResult.Ok>().Subject;
         ok.Options.LogToFile.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Security_file_flags_are_preserved()
+    {
+        var result = ServerConsoleOptionsParser.Parse(
+            Args(
+                "--auth-key-file",
+                "session.key",
+                "--allowlist-file",
+                "allowlist.txt",
+                "--admin-token-file",
+                "admin.token"));
+
+        var ok = result.Should().BeOfType<ServerConsoleOptionsParser.ParseResult.Ok>().Subject;
+        ok.Options.AuthenticationKeyFilePath.Should().Be("session.key");
+        ok.Options.AllowlistFilePath.Should().Be("allowlist.txt");
+        ok.Options.AdminTokenFilePath.Should().Be("admin.token");
     }
 
     [Theory]
@@ -113,6 +145,14 @@ public sealed class ServerConsoleOptionsParserTests
     }
 
     [Fact]
+    public void Tick_rate_above_fixed_step_limit_is_rejected()
+    {
+        var result = ServerConsoleOptionsParser.Parse(Args("--tick-hz", "1001"));
+
+        result.Should().BeOfType<ServerConsoleOptionsParser.ParseResult.Failed>();
+    }
+
+    [Fact]
     public void Zero_snapshot_interval_is_rejected()
     {
         var result = ServerConsoleOptionsParser.Parse(Args("--snapshot-interval", "0"));
@@ -128,6 +168,22 @@ public sealed class ServerConsoleOptionsParserTests
 
         var failed = result.Should().BeOfType<ServerConsoleOptionsParser.ParseResult.Failed>().Subject;
         failed.Diagnostic.Should().Contain("--frame-pump-hz");
+    }
+
+    [Fact]
+    public void Frame_pump_above_operational_limit_is_rejected()
+    {
+        var result = ServerConsoleOptionsParser.Parse(Args("--frame-pump-hz", "1001"));
+
+        result.Should().BeOfType<ServerConsoleOptionsParser.ParseResult.Failed>();
+    }
+
+    [Fact]
+    public void Player_capacity_above_snapshot_limit_is_rejected()
+    {
+        var result = ServerConsoleOptionsParser.Parse(Args("--max-players", "257"));
+
+        result.Should().BeOfType<ServerConsoleOptionsParser.ParseResult.Failed>();
     }
 
     [Fact]
@@ -147,6 +203,11 @@ public sealed class ServerConsoleOptionsParserTests
         ServerConsoleOptionsParser.HelpText.Should().Contain("--tick-hz");
         ServerConsoleOptionsParser.HelpText.Should().Contain("--snapshot-interval");
         ServerConsoleOptionsParser.HelpText.Should().Contain("--frame-pump-hz");
+        ServerConsoleOptionsParser.HelpText.Should().Contain("--auth-key-file");
+        ServerConsoleOptionsParser.HelpText.Should().Contain("--allowlist-file");
+        ServerConsoleOptionsParser.HelpText.Should().Contain("--admin-token-file");
+        ServerConsoleOptionsParser.HelpText.Should().Contain("--max-players");
+        ServerConsoleOptionsParser.HelpText.Should().Contain("--log-level");
         ServerConsoleOptionsParser.HelpText.Should().Contain("--no-file-log");
         ServerConsoleOptionsParser.HelpText.Should().Contain("--help");
     }

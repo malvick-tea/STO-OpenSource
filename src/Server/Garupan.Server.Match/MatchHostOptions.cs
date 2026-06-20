@@ -3,6 +3,7 @@ using System.Numerics;
 using Garupan.Content;
 using Garupan.Server.Match.Outcome;
 using Garupan.Sim.Components;
+using Garupan.Sim.Replay;
 using Garupan.Sim.Systems;
 using Opus.Foundation;
 
@@ -79,6 +80,12 @@ public sealed record MatchHostOptions(
     Vector2? OpponentSpawnAnchor = null,
     ushort SpawnInvulnerabilityTicks = SpawnInvulnerabilitySystem.DefaultInvulnerabilityTicks)
 {
+    public int MaxPlayers { get; init; } = 20;
+
+    public bool AllowLateJoin { get; init; }
+
+    public float VisibilityRadiusMeters { get; init; } = 250f;
+
     /// <summary>Optional terrain height sampler — world (x east, z north) → surface height. When
     /// set, the authoritative hull dynamics resolve the slope so peers seat on, slide down, and
     /// grip the map relief; the client renders the same field, so server physics and client visuals
@@ -100,4 +107,14 @@ public sealed record MatchHostOptions(
     /// value identity stays data-only.</summary>
     public System.Collections.Generic.IReadOnlyList<MapObstacle> MapObstacles { get; init; } =
         System.Array.Empty<MapObstacle>();
+
+    /// <summary>Optional replay sink. When set, the host records every
+    /// snapshot it broadcasts into the sink and flushes it on match-decided
+    /// (or on dispose). When null (default), the host uses
+    /// <see cref="NullReplaySink"/> so the tick loop has no null-check on
+    /// the hot path. Concrete implementations should derive an HKDF
+    /// sub-key scoped to the replay domain from the install key — see
+    /// <see cref="MatchReplayRecorder"/> for the canonical disk-backed
+    /// implementation.</summary>
+    public IReplaySink? ReplaySink { get; init; }
 }

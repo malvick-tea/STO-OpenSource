@@ -94,6 +94,19 @@ public sealed class ShellVisualCsvTests
     }
 
     [Fact]
+    public void Parse_throws_on_model_path_traversal()
+    {
+        var csv = $"""
+            {Header}
+            AP,res://shell/../outside.glb,test
+            """;
+
+        var act = () => ShellVisualCsv.Parse(csv);
+
+        act.Should().Throw<InvalidDataException>().WithMessage("*model_vfs_path*unsafe*");
+    }
+
+    [Fact]
     public void Parse_throws_on_header_mismatch()
     {
         var csv = """

@@ -38,6 +38,29 @@ public sealed class TerrainHeightFieldTests
     }
 
     [Fact]
+    public void Rejects_trailing_bytes_after_the_height_grid()
+    {
+        var exact = BuildBlob(2, 10f, new[] { 1f, 2f, 3f, 4f });
+        var trailing = new byte[exact.Length + 1];
+        exact.CopyTo(trailing, 0);
+
+        var act = () => TerrainHeightField.Load(trailing);
+
+        act.Should().Throw<InvalidDataException>();
+    }
+
+    [Fact]
+    public void Constructor_rejects_non_finite_world_size()
+    {
+        var act = () => new TerrainHeightField(
+            2,
+            float.PositiveInfinity,
+            new[] { 1f, 2f, 3f, 4f });
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void Flat_ground_has_a_straight_up_normal()
     {
         var field = TerrainHeightField.Load(BuildBlob(3, 20f, Enumerable.Repeat(42f, 9).ToArray()));

@@ -34,10 +34,15 @@ public sealed class MatchHostTickLoop
     private readonly MatchHost _host;
     private readonly TimeSpan _targetFrameInterval;
     private readonly ILogger<MatchHostTickLoop> _logger;
+    private readonly Action? _beforePump;
     private int _framesPumped;
     private int _telemetryFrameCounter;
 
-    public MatchHostTickLoop(MatchHost host, int framePumpHz, ILogger<MatchHostTickLoop>? logger = null)
+    public MatchHostTickLoop(
+        MatchHost host,
+        int framePumpHz,
+        ILogger<MatchHostTickLoop>? logger = null,
+        Action? beforePump = null)
     {
         ArgumentNullException.ThrowIfNull(host);
         if (framePumpHz <= 0)
@@ -48,6 +53,7 @@ public sealed class MatchHostTickLoop
         _host = host;
         _targetFrameInterval = TimeSpan.FromSeconds(1.0 / framePumpHz);
         _logger = logger ?? NullLogger<MatchHostTickLoop>.Instance;
+        _beforePump = beforePump;
     }
 
     /// <summary>How many <see cref="MatchHost.Pump"/> calls have happened since the loop
@@ -73,6 +79,7 @@ public sealed class MatchHostTickLoop
             var deltaSeconds = (now - lastTimestamp).TotalSeconds;
             lastTimestamp = now;
 
+            _beforePump?.Invoke();
             _host.Pump(deltaSeconds);
             Interlocked.Increment(ref _framesPumped);
             EmitTelemetryIfDue();

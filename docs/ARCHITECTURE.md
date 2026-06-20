@@ -159,6 +159,12 @@ Responsibilities:
 
 Transport contracts and UDP implementation are in Opus.
 
+The game relies on Opus UDP protocol v2 for an authenticated challenge-response
+handshake, per-session HMAC keys, monotonic frame sequences, replay rejection,
+source-address rate limiting, and bounded peer tables. Game-layer codecs still
+validate sizes, finite values, enum domains, ownership, tick windows, and input
+rate before mutating authoritative state.
+
 ### Match Server
 
 Project:
@@ -176,6 +182,7 @@ Responsibilities:
 - authoritative host loop;
 - input routing;
 - snapshot projection;
+- per-peer snapshot visibility filtering;
 - match outcome tracking;
 - match reset.
 
@@ -219,6 +226,7 @@ Responsibilities:
 - deterministic seed handling;
 - snapshot codec;
 - replay codec;
+- replay HMAC verification;
 - compact protocol frames.
 
 The simulation layer does not depend on client rendering.

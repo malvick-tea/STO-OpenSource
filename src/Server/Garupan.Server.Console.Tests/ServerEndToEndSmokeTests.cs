@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Net;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -27,6 +28,7 @@ namespace Garupan.Server.Console.Tests;
 public sealed class ServerEndToEndSmokeTests
 {
     private static readonly TimeSpan EventWaitBudget = TimeSpan.FromSeconds(4);
+    private static readonly byte[] TestAuthenticationKey = RandomNumberGenerator.GetBytes(32);
 
     private static readonly UdpTransportOptions FastTransportOptions = new()
     {
@@ -34,11 +36,7 @@ public sealed class ServerEndToEndSmokeTests
         DeadlineDuration = TimeSpan.FromMilliseconds(800),
         ReceivePollInterval = TimeSpan.FromMilliseconds(40),
         ConnectTimeout = TimeSpan.FromSeconds(2),
-    };
-
-    private static readonly string[] CleanShutdownArgs =
-    {
-        "--port", "0", "--no-file-log", "--frame-pump-hz", "240",
+        AuthenticationKey = TestAuthenticationKey,
     };
 
     private static readonly string[] BadArgs = { "--unknown-flag" };
@@ -55,13 +53,17 @@ public sealed class ServerEndToEndSmokeTests
     [Fact]
     public async Task Connected_client_receives_welcome_and_snapshot()
     {
+        using var authenticationKeyFile = TemporaryAuthenticationKeyFile.Create(TestAuthenticationKey);
         var options = new ServerConsoleOptions(
             ListenEndpoint: new IPEndPoint(IPAddress.Loopback, 0),
             TickRateHz: 60,
             SnapshotIntervalTicks: 1,
             FramePumpHz: 240,
             LogToFile: false,
-            MatchModeId: "hungry_battles");
+            MatchModeId: "hungry_battles")
+        {
+            AuthenticationKeyFilePath = authenticationKeyFile.Path,
+        };
 
         using var bundle = ServerHostBundle.Create(
             options,
@@ -103,9 +105,10 @@ public sealed class ServerEndToEndSmokeTests
     [Fact]
     public async Task Server_console_entry_run_returns_clean_on_cancellation()
     {
+        using var authenticationKeyFile = TemporaryAuthenticationKeyFile.Create(TestAuthenticationKey);
         using var shutdown = new ShutdownSignal();
         var runTask = Task.Run(() => ServerConsoleEntry.Run(
-            CleanShutdownArgs,
+            RuntimeArgs(authenticationKeyFile.Path),
             TestCatalog,
             NullLoggerFactory.Instance,
             shutdown));
@@ -142,14 +145,16 @@ public sealed class ServerEndToEndSmokeTests
     [Fact]
     public async Task Server_console_entry_run_returns_bind_error_when_port_in_use()
     {
+        using var authenticationKeyFile = TemporaryAuthenticationKeyFile.Create(TestAuthenticationKey);
         using var first = UdpServerTransport.Bind(
             "first",
-            new IPEndPoint(IPAddress.Loopback, 0));
+            new IPEndPoint(IPAddress.Loopback, 0),
+            FastTransportOptions);
         var portInUse = first.BoundEndpoint.Port;
 
         using var shutdown = new ShutdownSignal();
         var runTask = Task.Run(() => ServerConsoleEntry.Run(
-            BindCollisionArgs(portInUse),
+            BindCollisionArgs(portInUse, authenticationKeyFile.Path),
             TestCatalog,
             NullLoggerFactory.Instance,
             shutdown));
@@ -173,8 +178,9 @@ public sealed class ServerEndToEndSmokeTests
     [Fact]
     public async Task Server_console_entry_run_accepts_known_tactical_mode()
     {
+        using var authenticationKeyFile = TemporaryAuthenticationKeyFile.Create(TestAuthenticationKey);
         using var shutdown = new ShutdownSignal();
-        var args = new[] { "--mode", "tactical_5v5", "--port", "0", "--no-file-log", "--frame-pump-hz", "240" };
+        var args = RuntimeArgs(authenticationKeyFile.Path, "--mode", "tactical_5v5");
         var runTask = Task.Run(() => ServerConsoleEntry.Run(
             args,
             TestCatalog,
@@ -189,10 +195,30 @@ public sealed class ServerEndToEndSmokeTests
         (await runTask).Should().Be(ServerConsoleEntry.ExitOk);
     }
 
-    private static string[] BindCollisionArgs(int port) => new[]
+    private static string[] BindCollisionArgs(int port, string authenticationKeyFilePath) => new[]
     {
-        "--port", port.ToString(CultureInfo.InvariantCulture), "--no-file-log",
+        "--port",
+        port.ToString(CultureInfo.InvariantCulture),
+        "--no-file-log",
+        "--auth-key-file",
+        authenticationKeyFilePath,
     };
+
+    private static string[] RuntimeArgs(string authenticationKeyFilePath, params string[] additionalArgs)
+    {
+        var args = new List<string>
+        {
+            "--port",
+            "0",
+            "--no-file-log",
+            "--frame-pump-hz",
+            "240",
+            "--auth-key-file",
+            authenticationKeyFilePath,
+        };
+        args.AddRange(additionalArgs);
+        return args.ToArray();
+    }
 
     private static async Task PumpUntil(ClientSession session, Func<bool> predicate, TimeSpan timeout)
     {
@@ -209,5 +235,29 @@ public sealed class ServerEndToEndSmokeTests
         }
 
         session.Pump();
+    }
+
+    private sealed class TemporaryAuthenticationKeyFile : IDisposable
+    {
+        private TemporaryAuthenticationKeyFile(string path)
+        {
+            Path = path;
+        }
+
+        public string Path { get; }
+
+        public static TemporaryAuthenticationKeyFile Create(ReadOnlySpan<byte> key)
+        {
+            var path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                $"garupan-auth-{Guid.NewGuid():N}.key");
+            File.WriteAllText(path, Convert.ToBase64String(key));
+            return new TemporaryAuthenticationKeyFile(path);
+        }
+
+        public void Dispose()
+        {
+            File.Delete(Path);
+        }
     }
 }

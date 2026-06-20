@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.Extensions.Logging;
 
 namespace Garupan.Server.Console;
 
@@ -37,6 +38,18 @@ public sealed record ServerConsoleOptions(
     bool LogToFile,
     string MatchModeId)
 {
+    public string? AuthenticationKeyFilePath { get; init; }
+
+    public string? AllowlistFilePath { get; init; }
+
+    public string? AdminTokenFilePath { get; init; }
+
+    public int MaxPlayers { get; init; } = 20;
+
+    public bool AllowPublicBind { get; init; }
+
+    public LogLevel MinimumLogLevel { get; init; } = LogLevel.Information;
+
     /// <summary>Default fixed-step + snapshot cadence used by runtime runs +
     /// non-overridden tests. Mirrors <c>MatchHostOptions</c> defaults; lifted here so the
     /// CLI parser has a single place to refer back to.</summary>

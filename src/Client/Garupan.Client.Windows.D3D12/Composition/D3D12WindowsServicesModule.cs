@@ -29,6 +29,7 @@ using Opus.Engine.Pal.Windows.Threading;
 using Opus.Engine.Pal.Windows.Time;
 using Opus.Engine.Ui;
 using Opus.Engine.Ui.Direct3D12;
+using Opus.Persistence;
 
 namespace Garupan.Client.Windows.Direct3D12.Composition;
 
@@ -127,6 +128,7 @@ internal static class D3D12WindowsServicesModule
     private static void RegisterPlatformPal(IServiceCollection services)
     {
         services.AddSingleton<IVfs>(_ => WindowsVfs.ForCurrentProcess("STO"));
+        services.AddSingleton<ISaveIntegrityKeyProvider, WindowsSaveIntegrityKeyProvider>();
         services.AddSingleton<ILifecycleService, WindowsLifecycleService>();
         services.AddSingleton<IJobScheduler, ThreadPoolJobScheduler>();
         services.AddSingleton<IHighResClock, StopwatchClock>();

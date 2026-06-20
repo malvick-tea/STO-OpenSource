@@ -49,6 +49,7 @@ public sealed class CampaignProgressService
         IBinaryCodec codec,
         IClock clock,
         BuildInfo buildInfo,
+        ISaveIntegrityKeyProvider integrityKeyProvider,
         ILogger<CampaignProgressService> logger)
     {
         ArgumentNullException.ThrowIfNull(campaign);
@@ -57,7 +58,7 @@ public sealed class CampaignProgressService
         _campaignId = campaign.Id;
         _current = CampaignProgress.Empty(_campaignId);
         _store = new FramedBlobStore<CampaignProgressDto>(
-            vfs, codec, clock, buildInfo,
+            vfs, codec, clock, buildInfo, integrityKeyProvider,
             ProgressPath, SaveSchemas.CampaignProgress, "progress", logger);
     }
 
@@ -137,15 +138,20 @@ public sealed class CampaignProgressService
         ApplyMutation(next);
     }
 
-    private void ApplyMutation(CampaignProgress next)
+    /// <summary>Applies a mutation, fires <see cref="Changed"/>, and starts a
+    /// tracked save. The returned <see cref="Task"/> completes when the framed
+    /// blob is durable on disk (or when the save has logged its failure).
+    /// Shutdown paths should await this so a fast exit cannot truncate the
+    /// in-flight write.</summary>
+    public Task ApplyMutation(CampaignProgress next, CancellationToken ct = default)
     {
         if (next == _current)
         {
-            return;
+            return Task.CompletedTask;
         }
 
         _current = next;
         Changed?.Invoke(next);
-        _ = _store.SaveAsync(CampaignProgressDto.From(_current), CancellationToken.None);
+        return _store.SaveAsync(CampaignProgressDto.From(_current), ct);
     }
 }

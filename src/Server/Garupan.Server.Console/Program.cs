@@ -1,4 +1,6 @@
 using System;
+using Microsoft.Extensions.Logging;
+using Serilog.Events;
 
 namespace Garupan.Server.Console;
 
@@ -13,7 +15,9 @@ public static class Program
 {
     public static int Main(string[] args)
     {
-        var loggerFactory = ServerSerilogSetup.Configure(fileSinkEnabled: PreviewFileLoggingFlag(args));
+        var loggerFactory = ServerSerilogSetup.Configure(
+            fileSinkEnabled: PreviewFileLoggingFlag(args),
+            minimumLevel: PreviewLogLevel(args));
         try
         {
             using var shutdown = new ShutdownSignal();
@@ -21,7 +25,10 @@ public static class Program
         }
         catch (Exception ex)
         {
-            System.Console.Error.WriteLine($"sto-server: unhandled exception: {ex}");
+            loggerFactory.CreateLogger("STO.Server.Console")
+                .LogCritical(ex, "Unhandled server exception.");
+            System.Console.Error.WriteLine(
+                $"sto-server: unhandled exception: {ex.Message}");
             return 99;
         }
         finally
@@ -29,6 +36,29 @@ public static class Program
             loggerFactory.Dispose();
             ServerSerilogSetup.Shutdown();
         }
+    }
+
+    private static LogEventLevel PreviewLogLevel(string[] args)
+    {
+        for (var index = 0; index + 1 < args.Length; index++)
+        {
+            if (!string.Equals(args[index], "--log-level", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            return args[index + 1].ToLowerInvariant() switch
+            {
+                "trace" => LogEventLevel.Verbose,
+                "debug" => LogEventLevel.Debug,
+                "warning" => LogEventLevel.Warning,
+                "error" => LogEventLevel.Error,
+                "critical" => LogEventLevel.Fatal,
+                _ => LogEventLevel.Information,
+            };
+        }
+
+        return LogEventLevel.Information;
     }
 
     /// <summary>Cheap pre-parse pass: peek at whether <c>--no-file-log</c> is set so the

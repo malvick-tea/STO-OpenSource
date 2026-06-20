@@ -120,7 +120,7 @@ dotnet run --project .\src\Server\Garupan.Server.Console\Garupan.Server.Console.
 Use a slower local tick rate:
 
 ```powershell
-dotnet run --project .\src\Server\Garupan.Server.Console\Garupan.Server.Console.csproj -- --tick-hz 30 --frame-pump-hz 60
+dotnet run --project .\src\Server\Garupan.Server.Console\Garupan.Server.Console.csproj -- --tick-hz 30 --frame-pump-hz 60 --auth-key-file C:\keys\sto-session.key
 ```
 
 Keep `--frame-pump-hz` greater than or equal to `--tick-hz`.
@@ -136,6 +136,12 @@ The parser accepts:
 --tick-hz N
 --snapshot-interval N
 --frame-pump-hz N
+--auth-key-file PATH
+--allowlist-file PATH
+--admin-token-file PATH
+--max-players N
+--public
+--log-level LEVEL
 --no-file-log
 --help
 ```
@@ -148,6 +154,16 @@ Rules:
 - `--snapshot-interval` must be positive.
 - `--frame-pump-hz` must not be lower than `--tick-hz`.
 - `--mode` is a content ID resolved later by match option creation.
+- `--auth-key-file` is required before the host opens a network socket.
+- `--allowlist-file` optionally restricts peers to listed IPv4 source addresses.
+- `--admin-token-file` enables `kick <network-id> <token>` commands on local stdin.
+- `--max-players` must be positive and is also capped by the selected mode.
+- a non-loopback `--bind` requires an explicit `--public` acknowledgement.
+- `--log-level` defaults to `information`.
+
+The client reads the same authenticated-session key from
+`STO_AUTH_KEY_FILE`. Do not commit runtime keys. Use separate keys per
+environment and rotate a key if it is disclosed.
 
 Parser code should stay side-effect free. It returns parsed options, help, or a
 diagnostic.
@@ -361,43 +377,5 @@ explain the bad input.
 
 ## Common Problems
 
-### Opus project reference cannot be found
-
-Check folder placement. `OpusOpenSource` should be a sibling of
-`STO-openSource`, or project references should be updated.
-
-### D3D12 project fails on a non-Windows machine
-
-Build non-D3D12 projects first. D3D12 host and client projects are Windows-only.
-
-### A test fails on missing local runtime content
-
-Run a narrower test project or provide local input for that test. Check whether
-the test is intended to cover file-backed behavior.
-
-### Server exits after option parsing
-
-Run with `--help`, then check each flag. The parser rejects invalid ports,
-invalid bind addresses, non-positive rates, and a frame pump lower than the tick
-rate.
-
-### Tool command finds no keys or catalogs
-
-Check the current shell folder and pass absolute paths. Tool commands do not
-guess a workspace root.
-
-## Review Checklist
-
-Before considering a change done:
-
-- The touched project builds.
-- Nearby tests pass.
-- A second layer test passes when the change crosses a boundary.
-- New parser behavior has tests.
-- New simulation behavior has deterministic tests.
-- New server options have parser tests.
-- New UI state has pure UI tests where possible.
-- Generated output is not part of the change.
-- Local runtime content is not part of the change unless it is a tiny neutral
-  fixture.
-- Project references still resolve.
+Troubleshooting and the completion checklist are documented in
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md).

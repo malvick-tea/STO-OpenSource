@@ -1,4 +1,10 @@
+using System;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Opus.Foundation;
+using Opus.Persistence;
 
 namespace Garupan.Client.Core.Tests.Services;
 
@@ -18,6 +24,30 @@ internal static class PersistenceTestEnvironment
         FrameworkDescription: ".NET 8.0.0",
         OperatingSystem: "Windows 11",
         ProcessArchitecture: "X64");
+
+    public static readonly byte[] IntegrityKey =
+        SHA256.HashData(Encoding.UTF8.GetBytes("garupan-persistence-tests"));
+
+    public static readonly ISaveIntegrityKeyProvider IntegrityKeyProvider =
+        new FixedSaveIntegrityKeyProvider(IntegrityKey);
+}
+
+internal sealed class FixedSaveIntegrityKeyProvider : ISaveIntegrityKeyProvider
+{
+    private readonly ReadOnlyMemory<byte> _key;
+
+    public FixedSaveIntegrityKeyProvider(byte[] key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        _key = key;
+    }
+
+    public ValueTask<ReadOnlyMemory<byte>> GetKeyAsync(
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(_key);
+    }
 }
 
 /// <summary>Trivial deterministic <see cref="IClock"/> — tests set <see cref="Now"/>

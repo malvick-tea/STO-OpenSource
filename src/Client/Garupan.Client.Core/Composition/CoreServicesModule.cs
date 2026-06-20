@@ -32,6 +32,7 @@ public static class CoreServicesModule
         // SaveHeaderSerializer + IBinaryCodec, stamp them with the running BuildInfo,
         // and timestamp them with IClock.
         services.AddSingleton<IBinaryCodec, MemoryPackCodec>();
+        services.AddSingleton<ISaveIntegrityKeyProvider, MissingSaveIntegrityKeyProvider>();
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton(BuildInfo.Current);
 

@@ -32,6 +32,8 @@ namespace Garupan.Client.Windows.Direct3D12;
 /// </summary>
 public static class D3D12WindowsEntry
 {
+    private static readonly TimeSpan BootShutdownTimeout = TimeSpan.FromSeconds(5);
+
     public static int Main(string[] args)
     {
         _ = args;
@@ -48,12 +50,12 @@ public static class D3D12WindowsEntry
             using var container = BuildContainer(dispatcher, serilogProvider);
             ContainerAccessor.Set(container);
 
-            using var cts = CreateHostCancellation(container);
+            using var shutdown = new ClientShutdownSignal(container.Resolve<ExitService>());
             var crashHandler = container.Resolve<ICrashHandler>();
             container.Resolve<CrashReportNotifier>().Attach(crashHandler);
             crashHandler.Install();
 
-            RunSession(container, dispatcher, bootLogger, cts.Token);
+            RunSession(container, dispatcher, bootLogger, shutdown.Token);
             return 0;
         }
         catch (BootFailureException bex)
@@ -100,21 +102,6 @@ public static class D3D12WindowsEntry
         });
     }
 
-    private static CancellationTokenSource CreateHostCancellation(ClientContainer container)
-    {
-        var cts = new CancellationTokenSource();
-
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            cts.Cancel();
-        };
-
-        container.Resolve<ExitService>().ExitRequested += () => cts.Cancel();
-
-        return cts;
-    }
-
     private static void RunSession(
         ClientContainer container,
         MainThreadDispatcher dispatcher,
@@ -157,6 +144,22 @@ public static class D3D12WindowsEntry
             bootCts.Token);
 
         D3D12WindowsFrameLoop.Run(window, dispatcher, stack, drawSurface, frameLoop, input, audio, clock, bootTask, hostCt);
+        if (!bootTask.IsCompleted)
+        {
+            bootCts.Cancel();
+            var deadline = DateTime.UtcNow + BootShutdownTimeout;
+            while (!bootTask.IsCompleted && DateTime.UtcNow < deadline)
+            {
+                dispatcher.DrainPending();
+                Thread.Sleep(1);
+            }
+        }
+
+        if (!bootTask.IsCompleted)
+        {
+            throw new TimeoutException(
+                $"Boot pipeline did not stop within {BootShutdownTimeout.TotalSeconds:0} seconds.");
+        }
 
         bootTask.GetAwaiter().GetResult();
     }

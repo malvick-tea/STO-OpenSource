@@ -105,6 +105,9 @@ public sealed class D3D12HostBundle : IDisposable
             resizeBridge = new D3D12WindowResizeBridge(session.Window, session.SwapChain.Resize);
 
             var bundle = new D3D12HostBundle(session, atlas, drawSurface, frameLoop, input, resizeBridge);
+            // Ownership transferred: null the locals so the catch path (which
+            // only runs if a later statement throws) does not double-dispose
+            // resources the bundle now owns.
             atlas = null;
             drawSurface = null;
             frameLoop = null;
@@ -112,18 +115,22 @@ public sealed class D3D12HostBundle : IDisposable
             resizeBridge = null;
             return bundle;
         }
-        finally
+        catch
         {
+            // Tear down everything that was allocated before the throw, in
+            // reverse construction order. The session is disposed
+            // unconditionally here because the bundle never took ownership —
+            // the previous implementation only disposed it when at least one
+            // local was non-null, which leaked the entire D3D12 device + swap
+            // chain + compiler when the very first in-try call (BuildAndUpload)
+            // threw.
             resizeBridge?.Dispose();
             input?.Dispose();
             frameLoop?.Dispose();
             drawSurface?.Dispose();
             atlas?.Dispose();
-            if (atlas is not null || drawSurface is not null || frameLoop is not null
-                || input is not null || resizeBridge is not null)
-            {
-                session.Dispose();
-            }
+            session.Dispose();
+            throw;
         }
     }
 

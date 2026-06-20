@@ -1,9 +1,11 @@
 using System;
 using System.Numerics;
+using System.Security.Cryptography;
 using Garupan.Content;
 using Garupan.Server.Match;
 using Garupan.Sim.Components;
 using Microsoft.Extensions.Logging;
+using Opus.Net.Udp.Frame;
 using Opus.Net.Udp.Transport;
 
 namespace Garupan.Server.Console;
@@ -31,6 +33,7 @@ public sealed class ServerHostBundle : IDisposable
     private readonly UdpServerTransport _transport;
     private readonly MatchHost _host;
     private readonly MatchHostTickLoop _tickLoop;
+    private readonly ServerAdminConsoleController? _adminController;
     private readonly ILogger<ServerHostBundle> _logger;
     private bool _disposed;
 
@@ -38,11 +41,13 @@ public sealed class ServerHostBundle : IDisposable
         UdpServerTransport transport,
         MatchHost host,
         MatchHostTickLoop tickLoop,
+        ServerAdminConsoleController? adminController,
         ILogger<ServerHostBundle> logger)
     {
         _transport = transport;
         _host = host;
         _tickLoop = tickLoop;
+        _adminController = adminController;
         _logger = logger;
     }
 
@@ -74,42 +79,95 @@ public sealed class ServerHostBundle : IDisposable
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(mode);
         ArgumentNullException.ThrowIfNull(loggerFactory);
-
-        var transport = UdpServerTransport.Bind(
-            name: "sto-server",
-            listenEndpoint: options.ListenEndpoint,
-            options: transportOptions,
-            logger: loggerFactory.CreateLogger<UdpServerTransport>());
-
-        var map = DefaultMatchMapLoader.TryLoad(AppContext.BaseDirectory);
-        var matchOptions = MatchHostOptionsFactory.ForMode(
-            mode,
-            playerSpec: TankRoster.VehicleMediumB,
-            spawnAnchor: Vector2.Zero,
-            tickRateHz: options.TickRateHz,
-            snapshotIntervalTicks: options.SnapshotIntervalTicks) with
+        if (string.IsNullOrWhiteSpace(options.AuthenticationKeyFilePath))
         {
-            TerrainHeightSampler = map?.TerrainHeightSampler,
-            MapProps = map?.Props ?? Array.Empty<MapProp>(),
-            MapObstacles = map?.Obstacles ?? Array.Empty<MapObstacle>(),
+            throw new InvalidOperationException(
+                "Authenticated networking requires --auth-key-file <path>.");
+        }
+
+        var authenticationKey = UdpAuthentication.ReadKeyFile(
+            options.AuthenticationKeyFilePath);
+        var allowedRemoteAddresses = string.IsNullOrWhiteSpace(options.AllowlistFilePath)
+            ? null
+            : ServerAddressAllowlist.Load(options.AllowlistFilePath);
+        var resolvedTransportOptions = (transportOptions ?? UdpTransportOptions.Default) with
+        {
+            AuthenticationKey = authenticationKey,
+            MaxConcurrentPeers = options.MaxPlayers,
+            AllowedRemoteAddresses = allowedRemoteAddresses,
         };
 
-        var host = new MatchHost(transport, matchOptions, loggerFactory.CreateLogger<MatchHost>());
-        var tickLoop = new MatchHostTickLoop(host, options.FramePumpHz, loggerFactory.CreateLogger<MatchHostTickLoop>());
+        UdpServerTransport? transport = null;
+        MatchHost? host = null;
+        ServerAdminConsoleController? adminController = null;
+        try
+        {
+            transport = UdpServerTransport.Bind(
+                name: "sto-server",
+                listenEndpoint: options.ListenEndpoint,
+                options: resolvedTransportOptions,
+                logger: loggerFactory.CreateLogger<UdpServerTransport>());
 
-        var logger = loggerFactory.CreateLogger<ServerHostBundle>();
-        logger.LogInformation(
-            "Server bound on {Endpoint}: mode={Mode}, kind={Kind}, respawns={Respawns}, tick={TickHz}Hz, snapshot-every={Snapshot}t, pump={PumpHz}Hz, map={Map}.",
-            transport.BoundEndpoint,
-            mode.Id,
-            mode.Kind,
-            mode.RespawnLimit,
-            options.TickRateHz,
-            options.SnapshotIntervalTicks,
-            options.FramePumpHz,
-            map?.Id ?? "flat");
+            var map = DefaultMatchMapLoader.TryLoad(AppContext.BaseDirectory);
+            var matchOptions = MatchHostOptionsFactory.ForMode(
+                mode,
+                playerSpec: TankRoster.VehicleMediumB,
+                spawnAnchor: Vector2.Zero,
+                tickRateHz: options.TickRateHz,
+                snapshotIntervalTicks: options.SnapshotIntervalTicks) with
+            {
+                TerrainHeightSampler = map?.TerrainHeightSampler,
+                MapProps = map?.Props ?? Array.Empty<MapProp>(),
+                MapObstacles = map?.Obstacles ?? Array.Empty<MapObstacle>(),
+                MaxPlayers = Math.Min(options.MaxPlayers, mode.LobbyCapacity),
+            };
 
-        return new ServerHostBundle(transport, host, tickLoop, logger);
+            host = new MatchHost(transport, matchOptions, loggerFactory.CreateLogger<MatchHost>());
+            if (!string.IsNullOrWhiteSpace(options.AdminTokenFilePath))
+            {
+                adminController = ServerAdminConsoleController.Start(
+                    options.AdminTokenFilePath,
+                    host,
+                    System.Console.In,
+                    loggerFactory.CreateLogger<ServerAdminConsoleController>());
+            }
+
+            var tickLoop = new MatchHostTickLoop(
+                host,
+                options.FramePumpHz,
+                loggerFactory.CreateLogger<MatchHostTickLoop>(),
+                adminController?.Drain);
+
+            var logger = loggerFactory.CreateLogger<ServerHostBundle>();
+            logger.LogInformation(
+                "Server bound on {Endpoint}: mode={Mode}, kind={Kind}, respawns={Respawns}, tick={TickHz}Hz, snapshot-every={Snapshot}t, pump={PumpHz}Hz, map={Map}.",
+                transport.BoundEndpoint,
+                mode.Id,
+                mode.Kind,
+                mode.RespawnLimit,
+                options.TickRateHz,
+                options.SnapshotIntervalTicks,
+                options.FramePumpHz,
+                map?.Id ?? "flat");
+
+            var bundle = new ServerHostBundle(
+                transport,
+                host,
+                tickLoop,
+                adminController,
+                logger);
+            transport = null;
+            host = null;
+            adminController = null;
+            return bundle;
+        }
+        finally
+        {
+            adminController?.Dispose();
+            host?.Dispose();
+            transport?.Dispose();
+            CryptographicOperations.ZeroMemory(authenticationKey);
+        }
     }
 
     public void Dispose()
@@ -121,6 +179,7 @@ public sealed class ServerHostBundle : IDisposable
 
         _disposed = true;
         _logger.LogInformation("Shutting down server host…");
+        _adminController?.Dispose();
         _host.Dispose();
         _transport.Dispose();
     }

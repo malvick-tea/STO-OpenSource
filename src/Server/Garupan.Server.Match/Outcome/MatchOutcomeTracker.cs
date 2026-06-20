@@ -26,6 +26,7 @@ public sealed class MatchOutcomeTracker
     private const int MinimumContenders = 2;
 
     private readonly MatchOutcomeRule _rule;
+    private bool _wasContested;
 
     public MatchOutcomeTracker(MatchOutcomeRule rule)
     {
@@ -39,7 +40,11 @@ public sealed class MatchOutcomeTracker
     /// <summary>Resets the tracker to <see cref="MatchOutcome.InProgress"/> so the next
     /// match on the same host process starts clean. The configured rule is preserved —
     /// only the latched verdict is cleared.</summary>
-    public void Reset() => Current = MatchOutcome.InProgress;
+    public void Reset()
+    {
+        Current = MatchOutcome.InProgress;
+        _wasContested = false;
+    }
 
     /// <summary>Re-evaluates the configured rule against <paramref name="participants"/>.
     /// A no-op once <see cref="Current"/> is decided — the outcome is final. Returns the
@@ -51,6 +56,7 @@ public sealed class MatchOutcomeTracker
             return Current;
         }
 
+        _wasContested |= HasMinimumContenders(participants);
         var evaluated = _rule switch
         {
             MatchOutcomeRule.LastTeamStanding => EvaluateLastTeamStanding(participants),
@@ -65,9 +71,9 @@ public sealed class MatchOutcomeTracker
         return Current;
     }
 
-    private static MatchOutcome EvaluateLastTankStanding(IReadOnlyList<MatchParticipant> participants)
+    private MatchOutcome EvaluateLastTankStanding(IReadOnlyList<MatchParticipant> participants)
     {
-        if (participants.Count < MinimumContenders)
+        if (!_wasContested)
         {
             return MatchOutcome.InProgress;
         }
@@ -93,13 +99,8 @@ public sealed class MatchOutcomeTracker
         };
     }
 
-    private static MatchOutcome EvaluateLastTeamStanding(IReadOnlyList<MatchParticipant> participants)
+    private MatchOutcome EvaluateLastTeamStanding(IReadOnlyList<MatchParticipant> participants)
     {
-        if (participants.Count < MinimumContenders)
-        {
-            return MatchOutcome.InProgress;
-        }
-
         // Team is a 3-value byte enum — a bit per team, set in an int, is enough to count
         // distinct teams without a per-tick HashSet allocation.
         var contestingMask = 0;
@@ -114,7 +115,7 @@ public sealed class MatchOutcomeTracker
             }
         }
 
-        if (BitOperations.PopCount((uint)contestingMask) < MinimumContenders)
+        if (!_wasContested)
         {
             // A single-team roster can never be decided by team elimination.
             return MatchOutcome.InProgress;
@@ -126,5 +127,21 @@ public sealed class MatchOutcomeTracker
             0 => MatchOutcome.Draw,
             _ => MatchOutcome.InProgress,
         };
+    }
+
+    private bool HasMinimumContenders(IReadOnlyList<MatchParticipant> participants)
+    {
+        if (_rule == MatchOutcomeRule.LastTankStanding)
+        {
+            return participants.Count >= MinimumContenders;
+        }
+
+        var teamMask = 0;
+        foreach (var participant in participants)
+        {
+            teamMask |= 1 << (int)participant.Team;
+        }
+
+        return BitOperations.PopCount((uint)teamMask) >= MinimumContenders;
     }
 }

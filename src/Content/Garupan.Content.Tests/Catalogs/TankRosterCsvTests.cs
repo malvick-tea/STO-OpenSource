@@ -30,8 +30,9 @@ public sealed class TankRosterCsvTests
         string penetration = "",
         string mountId = "mount_medium_a",
         string driveId = "german_medium",
-        string school = "PlayerSchool") =>
-        $"{id},Test Tank,tank.test,res://x.glb,{school},5,{gunId},{reload},{roundsPerMinute}," +
+        string school = "PlayerSchool",
+        string modelPath = "res://x.glb") =>
+        $"{id},Test Tank,tank.test,{modelPath},{school},5,{gunId},{reload},{roundsPerMinute}," +
         $"{penetration},{mountId},{driveId},23.6,300,1050,5.92,2.88,2.68,14," +
         "80,12,30,0,20,10,50,10,30,25,30,25,50,0,12,85,0.06";
 
@@ -116,6 +117,20 @@ public sealed class TankRosterCsvTests
         var act = () => TankRosterCsv.Parse("wrong,header\n" + Row());
 
         act.Should().Throw<InvalidDataException>().WithMessage("*header mismatch*");
+    }
+
+    [Theory]
+    [InlineData("../outside.glb")]
+    [InlineData("res://models/../outside.glb")]
+    [InlineData("C:\\outside.glb")]
+    [InlineData("res://models/CON.glb")]
+    [InlineData("res://models/tank. /model.glb")]
+    [InlineData("res://models/tank?.glb")]
+    public void Parse_rejects_unsafe_model_paths(string path)
+    {
+        var act = () => TankRosterCsv.Parse(Csv(Row(modelPath: path)));
+
+        act.Should().Throw<InvalidDataException>().WithMessage("*model_res_path*");
     }
 
     [Fact]

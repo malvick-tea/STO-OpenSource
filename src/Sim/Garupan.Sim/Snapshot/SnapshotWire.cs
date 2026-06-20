@@ -1,3 +1,5 @@
+using System;
+
 namespace Garupan.Sim.Snapshot;
 
 /// <summary>
@@ -72,17 +74,37 @@ public static class SnapshotWire
     public const int ProjectileBytes = 49;
     public const int PropCountBytes = 4;
     public const int PropBytes = 13;
+    public const int MaxEntities = 256;
+    public const int MaxProjectiles = 512;
+    public const int MaxProps = 1024;
+    public const int MaxEncodedBytes = 60 * 1024;
 
     /// <summary>Magic prefix on every snapshot frame: ASCII "SVOS". Lets a reader reject
     /// non-snapshot bytes early and gives forensic tooling a marker to grep for.</summary>
     public static readonly byte[] Magic = { (byte)'S', (byte)'V', (byte)'O', (byte)'S' };
 
     /// <summary>Exact serialised size for a given snapshot.</summary>
-    public static int EncodedSize(WorldSnapshot snap) =>
-        HeaderBytes
-        + (snap.Entities.Count * EntityBytes)
-        + ProjectileCountBytes
-        + (snap.Projectiles.Count * ProjectileBytes)
-        + PropCountBytes
-        + (snap.Props.Count * PropBytes);
+    public static int EncodedSize(WorldSnapshot snap)
+    {
+        ArgumentNullException.ThrowIfNull(snap);
+        if (snap.Entities.Count > MaxEntities
+            || snap.Projectiles.Count > MaxProjectiles
+            || snap.Props.Count > MaxProps)
+        {
+            throw new ArgumentException("Snapshot row count exceeds the wire safety limit.", nameof(snap));
+        }
+
+        var size = HeaderBytes
+            + ((long)snap.Entities.Count * EntityBytes)
+            + ProjectileCountBytes
+            + ((long)snap.Projectiles.Count * ProjectileBytes)
+            + PropCountBytes
+            + ((long)snap.Props.Count * PropBytes);
+        if (size > MaxEncodedBytes)
+        {
+            throw new ArgumentException("Snapshot exceeds the maximum encoded byte size.", nameof(snap));
+        }
+
+        return checked((int)size);
+    }
 }

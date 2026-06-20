@@ -227,8 +227,17 @@ dotnet run --project .\src\Server\Garupan.Server.Console\Garupan.Server.Console.
 Start a local server:
 
 ```powershell
-dotnet run --project .\src\Server\Garupan.Server.Console\Garupan.Server.Console.csproj -- --bind 127.0.0.1 --port 7777
+dotnet run --project .\src\Server\Garupan.Server.Console\Garupan.Server.Console.csproj -- --bind 127.0.0.1 --port 7777 --auth-key-file C:\keys\sto-session.key
 ```
+
+Set the same key file for the client:
+
+```powershell
+$env:STO_AUTH_KEY_FILE = "C:\keys\sto-session.key"
+```
+
+The key file accepts `base64:` or `hex:` raw keys of at least 32 bytes, or a
+high-entropy passphrase of at least 16 characters.
 
 Useful options:
 
@@ -239,8 +248,17 @@ Useful options:
 --tick-hz N
 --snapshot-interval N
 --frame-pump-hz N
+--auth-key-file PATH
+--max-players N
+--public
+--log-level LEVEL
 --no-file-log
 ```
+
+Non-loopback binds require `--public`. Network frames use authenticated Opus UDP
+sessions with replay protection. Match snapshots are filtered per peer, client
+inputs are bounded and tick-validated, replays and saves are HMAC-authenticated,
+and the Windows client protects its per-install save key with DPAPI.
 
 ## Workflows
 

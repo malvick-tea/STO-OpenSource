@@ -97,7 +97,7 @@ public sealed class CsvLoadRunnerTests : IDisposable
             "rival_delta,1.0,1.0,1.0,1.0,test fixture",
             "rival_echo,1.0,1.0,1.0,1.0,test fixture",
             "rival_foxtrot,1.0,1.0,1.0,1.0,test fixture",
-            "bcfreedom,1.0,1.0,1.0,1.0,test fixture",
+            "rival_golf,1.0,1.0,1.0,1.0,test fixture",
         };
         File.WriteAllLines(Path.Combine(_root, "school-palette.csv"), lines);
     }

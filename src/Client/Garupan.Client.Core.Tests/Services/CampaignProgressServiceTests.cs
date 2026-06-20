@@ -51,6 +51,7 @@ public sealed class CampaignProgressServiceTests
             new MemoryPackCodec(),
             new FakeClock(),
             TestBuildInfo,
+            PersistenceTestEnvironment.IntegrityKeyProvider,
             NullLogger<CampaignProgressService>.Instance);
 
     [Fact]
@@ -159,7 +160,11 @@ public sealed class CampaignProgressServiceTests
             schemaVersion: SaveSchemas.CampaignProgress,
             TestBuildInfo.Version,
             unixMs: 0);
-        var foreignFrame = SaveHeaderSerializer.WriteFrame(foreignHeader, foreignDto, new MemoryPackCodec());
+        var foreignFrame = SaveHeaderSerializer.WriteFrame(
+            foreignHeader,
+            foreignDto,
+            new MemoryPackCodec(),
+            PersistenceTestEnvironment.IntegrityKey);
         await vfs.WriteAllBytesAtomicAsync(CampaignProgressService.ProgressPath, foreignFrame, CancellationToken.None);
 
         var spec = BuildToySpec();
@@ -199,7 +204,11 @@ public sealed class CampaignProgressServiceTests
             CompletedMissionIds = new List<string> { "toy.a" },
             LastPlayedMissionId = "toy.a",
         };
-        var futureFrame = SaveHeaderSerializer.WriteFrame(futureHeader, futureDto, new MemoryPackCodec());
+        var futureFrame = SaveHeaderSerializer.WriteFrame(
+            futureHeader,
+            futureDto,
+            new MemoryPackCodec(),
+            PersistenceTestEnvironment.IntegrityKey);
         await vfs.WriteAllBytesAtomicAsync(CampaignProgressService.ProgressPath, futureFrame, CancellationToken.None);
 
         var service = BuildServiceFor(vfs, BuildToySpec());
@@ -244,12 +253,16 @@ public sealed class CampaignProgressServiceTests
             new MemoryPackCodec(),
             clock,
             TestBuildInfo,
+            PersistenceTestEnvironment.IntegrityKeyProvider,
             NullLogger<CampaignProgressService>.Instance);
 
         await service.LoadAsync(CancellationToken.None);
 
         var blob = vfs.Files[CampaignProgressService.ProgressPath];
-        var read = SaveHeaderSerializer.ReadFrame<CampaignProgressDto>(blob, new MemoryPackCodec());
+        var read = SaveHeaderSerializer.ReadFrame<CampaignProgressDto>(
+            blob,
+            new MemoryPackCodec(),
+            PersistenceTestEnvironment.IntegrityKey);
 
         read.IsOk.Should().BeTrue();
         var (header, body) = read.Unwrap();

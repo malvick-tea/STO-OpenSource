@@ -90,6 +90,18 @@ public sealed class MatchOutcomeTrackerTests
     }
 
     [Fact]
+    public void Disconnecting_after_a_free_for_all_was_contested_awards_the_survivor()
+    {
+        var tracker = new MatchOutcomeTracker(MatchOutcomeRule.LastTankStanding);
+        tracker.Update(new[] { Alive(1), Alive(2) });
+
+        tracker.Update(new[] { Alive(2) });
+
+        tracker.Current.Kind.Should().Be(MatchOutcomeKind.Winner);
+        tracker.Current.WinnerNetworkId.Should().Be(2u);
+    }
+
+    [Fact]
     public void Update_returns_the_current_latched_outcome()
     {
         var tracker = new MatchOutcomeTracker(MatchOutcomeRule.LastTankStanding);
@@ -157,6 +169,22 @@ public sealed class MatchOutcomeTrackerTests
         });
 
         tracker.Current.Kind.Should().Be(MatchOutcomeKind.Draw);
+    }
+
+    [Fact]
+    public void Disconnecting_a_team_after_the_match_was_contested_awards_the_remaining_team()
+    {
+        var tracker = new MatchOutcomeTracker(MatchOutcomeRule.LastTeamStanding);
+        tracker.Update(new[]
+        {
+            Alive(1, Team.PlayerSchool),
+            Alive(2, Team.OpponentSchool),
+        });
+
+        tracker.Update(new[] { Alive(1, Team.PlayerSchool) });
+
+        tracker.Current.Kind.Should().Be(MatchOutcomeKind.Winner);
+        tracker.Current.WinnerTeam.Should().Be(Team.PlayerSchool);
     }
 
     private static MatchParticipant Alive(uint networkId, Team team = Team.PlayerSchool) =>

@@ -79,7 +79,7 @@ public static class Program
         using var garage = new GarageSceneController(
             session.Device, session.Compiler, session.SwapChain.Format, WindowWidth, WindowHeight, lightingPreset);
 
-        var input = new DemoInputBindings(session.Window, garage, WindowWidth);
+        using var input = new DemoInputBindings(session.Window, garage, WindowWidth);
         var lifecycle = new MatchLifecycle();
         lifecycle.OutcomeChanged += ReportOutcome;
 

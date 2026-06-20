@@ -39,7 +39,10 @@ public sealed class ReplayMatrixTests
     [Fact]
     public void Single_pair_scenario_at_60_ticks_matches_pinned_hash()
     {
-        var hash = DeterminismHarness.ComputeReplayHash(DeterminismScenarios.BuildSinglePair, 60);
+        var hash = DeterminismHarness.ComputeReplayHash(
+            DeterminismScenarios.BuildSinglePair,
+            60,
+            ReplayTestKeys.IntegrityKey);
         hash.Should().Be(
             SinglePair60TickHash,
             "single-pair determinism digest moved — see ReplayMatrixTests.cs for guidance");
@@ -48,7 +51,10 @@ public sealed class ReplayMatrixTests
     [Fact]
     public void Multi_opponent_scenario_at_90_ticks_matches_pinned_hash()
     {
-        var hash = DeterminismHarness.ComputeReplayHash(DeterminismScenarios.BuildMultiOpponent, 90);
+        var hash = DeterminismHarness.ComputeReplayHash(
+            DeterminismScenarios.BuildMultiOpponent,
+            90,
+            ReplayTestKeys.IntegrityKey);
         hash.Should().Be(
             MultiOpponent90TickHash,
             "multi-opponent determinism digest moved — see ReplayMatrixTests.cs for guidance");
@@ -57,7 +63,10 @@ public sealed class ReplayMatrixTests
     [Fact]
     public void Point_blank_scenario_at_120_ticks_matches_pinned_hash()
     {
-        var hash = DeterminismHarness.ComputeReplayHash(DeterminismScenarios.BuildPointBlankExchange, 120);
+        var hash = DeterminismHarness.ComputeReplayHash(
+            DeterminismScenarios.BuildPointBlankExchange,
+            120,
+            ReplayTestKeys.IntegrityKey);
         hash.Should().Be(
             PointBlank120TickHash,
             "point-blank determinism digest moved — see ReplayMatrixTests.cs for guidance");
@@ -69,12 +78,24 @@ public sealed class ReplayMatrixTests
         // Cross-check: even with the pinned constants, verify in-process repeat
         // determinism. Catches any harness-side state that leaks between runs (e.g.
         // a static cache silently polluting the second pass).
-        var single = DeterminismHarness.ComputeReplayHash(DeterminismScenarios.BuildSinglePair, 30);
-        var singleAgain = DeterminismHarness.ComputeReplayHash(DeterminismScenarios.BuildSinglePair, 30);
+        var single = DeterminismHarness.ComputeReplayHash(
+            DeterminismScenarios.BuildSinglePair,
+            30,
+            ReplayTestKeys.IntegrityKey);
+        var singleAgain = DeterminismHarness.ComputeReplayHash(
+            DeterminismScenarios.BuildSinglePair,
+            30,
+            ReplayTestKeys.IntegrityKey);
         single.Should().Be(singleAgain);
 
-        var multi = DeterminismHarness.ComputeReplayHash(DeterminismScenarios.BuildMultiOpponent, 45);
-        var multiAgain = DeterminismHarness.ComputeReplayHash(DeterminismScenarios.BuildMultiOpponent, 45);
+        var multi = DeterminismHarness.ComputeReplayHash(
+            DeterminismScenarios.BuildMultiOpponent,
+            45,
+            ReplayTestKeys.IntegrityKey);
+        var multiAgain = DeterminismHarness.ComputeReplayHash(
+            DeterminismScenarios.BuildMultiOpponent,
+            45,
+            ReplayTestKeys.IntegrityKey);
         multi.Should().Be(multiAgain);
     }
 }

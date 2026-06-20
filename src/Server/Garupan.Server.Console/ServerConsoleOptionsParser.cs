@@ -1,6 +1,8 @@
 using System;
 using System.Globalization;
 using System.Net;
+using Garupan.Sim.Snapshot;
+using Microsoft.Extensions.Logging;
 
 namespace Garupan.Server.Console;
 
@@ -21,6 +23,9 @@ namespace Garupan.Server.Console;
 /// </remarks>
 public static class ServerConsoleOptionsParser
 {
+    private const int MaximumTickRateHz = 1000;
+    private const int MaximumFramePumpHz = 1000;
+
     /// <summary>Default UDP port the server binds to when none is supplied — picked to
     /// avoid the IANA well-known range while staying high enough for a non-root user on
     /// any OS to bind. Override on the CLI for runtime deployments.</summary>
@@ -42,6 +47,12 @@ public static class ServerConsoleOptionsParser
         "  --tick-hz N            Authoritative sim tick rate. Default: 60.",
         "  --snapshot-interval N  Broadcast a snapshot every N ticks. Default: 1.",
         "  --frame-pump-hz N      Wall-clock frame pump frequency (>= tick-hz). Default: 120.",
+        "  --auth-key-file PATH   Required key file for authenticated UDP sessions.",
+        "  --allowlist-file PATH  Optional UTF-8 file containing one allowed IPv4 address per line.",
+        "  --admin-token-file PATH Enable authenticated local-console admin commands.",
+        "  --max-players N        Maximum authenticated players admitted. Default: 20.",
+        "  --public               Explicitly allow a non-loopback bind address.",
+        "  --log-level LEVEL      trace, debug, information, warning, error, or critical.",
         "  --no-file-log          Disable the rolling file log sink (console-only logging).",
         "  --help, -h             Print this message and exit.",
     });
@@ -57,6 +68,12 @@ public static class ServerConsoleOptionsParser
         var framePumpHz = ServerConsoleOptions.DefaultFramePumpHz;
         var logToFile = true;
         var matchModeId = ServerConsoleOptions.DefaultMatchModeId;
+        string? authenticationKeyFilePath = null;
+        string? allowlistFilePath = null;
+        string? adminTokenFilePath = null;
+        var maxPlayers = 20;
+        var allowPublicBind = false;
+        var minimumLogLevel = LogLevel.Information;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -97,6 +114,30 @@ public static class ServerConsoleOptionsParser
                 case "--frame-pump-hz" when TryReadInt(args, ref i, out var v):
                     framePumpHz = v;
                     break;
+                case "--auth-key-file" when TryReadString(args, ref i, out var s):
+                    authenticationKeyFilePath = s;
+                    break;
+                case "--allowlist-file" when TryReadString(args, ref i, out var s):
+                    allowlistFilePath = s;
+                    break;
+                case "--admin-token-file" when TryReadString(args, ref i, out var s):
+                    adminTokenFilePath = s;
+                    break;
+                case "--max-players" when TryReadInt(args, ref i, out var v):
+                    maxPlayers = v;
+                    break;
+                case "--public":
+                    allowPublicBind = true;
+                    break;
+                case "--log-level" when TryReadString(args, ref i, out var s):
+                    if (!Enum.TryParse<LogLevel>(s, ignoreCase: true, out minimumLogLevel)
+                        || minimumLogLevel == LogLevel.None)
+                    {
+                        return new ParseResult.Failed(
+                            $"--log-level has unsupported value '{s}'");
+                    }
+
+                    break;
                 default:
                     return new ParseResult.Failed($"unrecognised argument: '{arg}'");
             }
@@ -107,9 +148,10 @@ public static class ServerConsoleOptionsParser
             return new ParseResult.Failed($"--port must be in [0,65535], got {port}");
         }
 
-        if (tickHz <= 0)
+        if (tickHz is <= 0 or > MaximumTickRateHz)
         {
-            return new ParseResult.Failed($"--tick-hz must be positive, got {tickHz}");
+            return new ParseResult.Failed(
+                $"--tick-hz must be in [1,{MaximumTickRateHz}], got {tickHz}");
         }
 
         if (snapshotInterval <= 0)
@@ -123,13 +165,39 @@ public static class ServerConsoleOptionsParser
                 $"--frame-pump-hz ({framePumpHz}) must be >= --tick-hz ({tickHz}) so the sim's fixed-step accumulator never starves");
         }
 
+        if (framePumpHz > MaximumFramePumpHz)
+        {
+            return new ParseResult.Failed(
+                $"--frame-pump-hz must be at most {MaximumFramePumpHz}, got {framePumpHz}");
+        }
+
+        if (maxPlayers is <= 0 or > SnapshotWire.MaxEntities)
+        {
+            return new ParseResult.Failed(
+                $"--max-players must be in [1,{SnapshotWire.MaxEntities}], got {maxPlayers}");
+        }
+
+        if (!IPAddress.IsLoopback(address) && !allowPublicBind)
+        {
+            return new ParseResult.Failed(
+                "a non-loopback --bind requires the explicit --public acknowledgement");
+        }
+
         return new ParseResult.Ok(new ServerConsoleOptions(
             new IPEndPoint(address, port),
             tickHz,
             snapshotInterval,
             framePumpHz,
             logToFile,
-            matchModeId));
+            matchModeId)
+        {
+            AuthenticationKeyFilePath = authenticationKeyFilePath,
+            AllowlistFilePath = allowlistFilePath,
+            AdminTokenFilePath = adminTokenFilePath,
+            MaxPlayers = maxPlayers,
+            AllowPublicBind = allowPublicBind,
+            MinimumLogLevel = minimumLogLevel,
+        });
     }
 
     private static bool TryReadString(string[] args, ref int index, out string value)

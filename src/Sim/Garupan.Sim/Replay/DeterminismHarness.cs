@@ -25,23 +25,34 @@ public static class DeterminismHarness
     /// <summary>Runs <see cref="DeterminismScenarios.BuildSinglePair"/> for
     /// <paramref name="tickCount"/> ticks and returns the SHA-256 hex digest. Kept for
     /// backward compat with the M3l-era determinism tests.</summary>
-    public static string ComputeReplayHash(int tickCount) =>
-        ComputeReplayHash(DeterminismScenarios.BuildSinglePair, tickCount);
+    public static string ComputeReplayHash(
+        int tickCount,
+        ReadOnlySpan<byte> authenticationKey) =>
+        ComputeReplayHash(
+            DeterminismScenarios.BuildSinglePair,
+            tickCount,
+            authenticationKey);
 
     /// <summary>Builds a world via <paramref name="scenarioBuilder"/>, runs
     /// <paramref name="tickCount"/> ticks through the canonical pipeline, and returns
     /// the SHA-256 hex digest of the recorded replay bytes.</summary>
-    public static string ComputeReplayHash(Action<World> scenarioBuilder, int tickCount)
+    public static string ComputeReplayHash(
+        Action<World> scenarioBuilder,
+        int tickCount,
+        ReadOnlySpan<byte> authenticationKey)
     {
         ArgumentNullException.ThrowIfNull(scenarioBuilder);
-        var bytes = RunAndRecord(scenarioBuilder, tickCount);
+        var bytes = RunAndRecord(scenarioBuilder, tickCount, authenticationKey);
         return Convert.ToHexString(SHA256.HashData(bytes));
     }
 
     /// <summary>Runs a scenario and returns the raw replay byte stream — diagnostic
     /// alternative to <see cref="ComputeReplayHash"/>. Tests can diff streams between
     /// runs to localise where a determinism regression introduces a difference.</summary>
-    public static byte[] RunAndRecord(Action<World> scenarioBuilder, int tickCount)
+    public static byte[] RunAndRecord(
+        Action<World> scenarioBuilder,
+        int tickCount,
+        ReadOnlySpan<byte> authenticationKey)
     {
         ArgumentNullException.ThrowIfNull(scenarioBuilder);
         if (tickCount <= 0)
@@ -63,7 +74,7 @@ public static class DeterminismHarness
             writer.RecordSnapshot(SnapshotCapture.Capture(world, time.Tick));
         }
 
-        return writer.Build();
+        return writer.Build(authenticationKey);
     }
 
     private static SystemPipeline BuildCanonicalPipeline() =>

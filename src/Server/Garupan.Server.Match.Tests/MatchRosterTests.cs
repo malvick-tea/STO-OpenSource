@@ -64,6 +64,24 @@ public sealed class MatchRosterTests
     }
 
     [Fact]
+    public void TryGetByNetworkId_returns_the_matching_player()
+    {
+        var roster = new MatchRoster();
+        roster.Seat(Player(new ConnectionId(7UL), networkId: 41u));
+
+        roster.TryGetByNetworkId(41u, out var player).Should().BeTrue();
+        player.Connection.Should().Be(new ConnectionId(7UL));
+    }
+
+    [Fact]
+    public void TryGetByNetworkId_returns_false_for_unknown_identity()
+    {
+        var roster = new MatchRoster();
+
+        roster.TryGetByNetworkId(41u, out _).Should().BeFalse();
+    }
+
+    [Fact]
     public void Seating_the_same_connection_twice_overwrites_the_prior_row()
     {
         var roster = new MatchRoster();

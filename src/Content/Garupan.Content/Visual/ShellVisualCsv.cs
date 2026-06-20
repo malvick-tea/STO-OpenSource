@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Garupan.Content.Validation;
 
 namespace Garupan.Content;
 
@@ -78,12 +79,10 @@ public static class ShellVisualCsv
                 $"Shell visual CSV row {rowIndex + 1}: unknown ammo type \"{ammoStr}\" (expected AP / APCR / HEAT / HE).");
         }
 
-        var path = cells[1].Trim();
-        if (string.IsNullOrEmpty(path))
-        {
-            throw new InvalidDataException(
-                $"Shell visual CSV row {rowIndex + 1}: model_vfs_path is empty.");
-        }
+        var path = ContentResourcePath.Require(
+            cells[1],
+            rowIndex,
+            "model_vfs_path");
 
         return new ShellVisualSpec(ammo, path);
     }

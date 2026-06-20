@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using Garupan.Content.Validation;
 
 namespace Garupan.Content;
 
@@ -96,6 +97,10 @@ public static class TankRosterCsv
                 $"Tank roster CSV row {row + 1}: expected {ColumnCount} columns, got {cells.Length}.");
         }
 
+        var modelPath = ContentResourcePath.Require(
+            cells[3],
+            row,
+            "model_res_path");
         var gun = BuildGun(cells, row);
         var mount = ResolveById(GunMountCatalog.FindById, cells[10], row, "mount_id");
         var drive = ResolveById(GroundDriveCatalog.FindById, cells[11], row, "drive_id");
@@ -104,7 +109,7 @@ public static class TankRosterCsv
             Id: RequireNonEmpty(cells[0], row, "id"),
             Designation: RequireNonEmpty(cells[1], row, "designation"),
             DisplayNameKey: RequireNonEmpty(cells[2], row, "display_name_key"),
-            ModelResPath: RequireNonEmpty(cells[3], row, "model_res_path"),
+            ModelResPath: modelPath,
             Armor: BuildArmor(cells, row),
             Gun: gun,
             GunMount: mount,

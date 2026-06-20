@@ -13,6 +13,8 @@ internal sealed class TankMotionTracker
     private const float HalfTrackGaugeMeters = 1.35f;
     private readonly Dictionary<int, TankMotionState> _states = new();
 
+    public void Reset() => _states.Clear();
+
     public TankMotion Resolve(in TankPlacement tank, long snapshotTick)
     {
         if (!_states.TryGetValue(tank.EntityId, out var state) || snapshotTick < state.SnapshotTick)

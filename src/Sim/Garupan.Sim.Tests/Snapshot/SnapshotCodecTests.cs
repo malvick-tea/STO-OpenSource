@@ -202,17 +202,17 @@ public sealed class SnapshotCodecTests
     }
 
     [Fact]
-    public void Decode_tolerates_trailing_bytes_past_the_declared_payload()
+    public void Decode_rejects_trailing_bytes_past_the_declared_payload()
     {
         var snap = new WorldSnapshot(new Tick(42), Array.Empty<EntitySnapshot>(), Array.Empty<ProjectileSnapshot>());
         var exact = SnapshotWire.EncodedSize(snap);
         var buffer = new byte[exact + 16]; // 16 trailing bytes of garbage
         SnapshotEncoder.Encode(snap, buffer);
 
-        var result = SnapshotDecoder.TryDecode(buffer, out var decoded);
+        var result = SnapshotDecoder.TryDecode(buffer, out _);
 
-        result.Ok.Should().BeTrue();
-        decoded.Tick.Should().Be(new Tick(42));
+        result.Ok.Should().BeFalse();
+        result.Error.Should().Contain("trailing");
     }
 
     [Fact]

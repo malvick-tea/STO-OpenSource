@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Opus.Engine.Input;
 using Opus.Engine.Pal.Sdl3;
@@ -5,38 +6,35 @@ using Opus.Engine.Renderer.Direct3D12.Scene;
 
 namespace Garupan.Garage.Demo;
 
-/// <summary>
-/// Wires the demo's keyboard + mouse + window-close events to game commands. Owns the
-/// pressed-key set + drag state and exposes per-frame derived inputs (throttle, steering,
-/// fire-held) as properties the main loop polls each tick. Close + restart are signalled
-/// via <see cref="CloseRequested"/> + <see cref="RestartRequested"/> flags; the host
-/// acknowledges the restart via <see cref="ClearRestartRequest"/> once it has rebuilt
-/// the sim.
-/// </summary>
-/// <remarks>
-/// Bindings:
-/// <list type="bullet">
-///   <item><description>ESC or window-close-button → <see cref="CloseRequested"/></description></item>
-///   <item><description>W/S → throttle (W = forward), A/D → steering (D = right)</description></item>
-///   <item><description>Space (held) → fire intent passed to <see cref="SimTankDriver.SubmitInput"/></description></item>
-///   <item><description>R → <see cref="RestartRequested"/></description></item>
-///   <item><description>P → <see cref="PauseToggleRequested"/></description></item>
-///   <item><description>Up → toggle orbit pause; Left/Right → orbit speed; Down → reset speed</description></item>
-///   <item><description>Mouse wheel → camera zoom; left-drag horizontal → orbit phase; vertical → camera pitch</description></item>
-/// </list>
-/// </remarks>
-internal sealed class DemoInputBindings
+/// <summary>Owns demo input subscriptions and per-frame derived controls.</summary>
+internal sealed class DemoInputBindings : IDisposable
 {
+    private readonly GarageSceneController _garage;
     private readonly HashSet<Key> _pressed = new();
+    private readonly SdlWindowService _window;
     private readonly int _windowWidth;
+    private bool _disposed;
     private bool _dragging;
 
-    public DemoInputBindings(SdlWindowService window, GarageSceneController garage, int windowWidth)
+    public DemoInputBindings(
+        SdlWindowService window,
+        GarageSceneController garage,
+        int windowWidth)
     {
+        ArgumentNullException.ThrowIfNull(window);
+        ArgumentNullException.ThrowIfNull(garage);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(windowWidth);
+        _window = window;
+        _garage = garage;
         _windowWidth = windowWidth;
-        window.CloseRequested += () => CloseRequested = true;
-        WireKeyboard(window, garage);
-        WireMouse(window, garage);
+
+        _window.CloseRequested += OnCloseRequested;
+        _window.KeyPressed += OnKeyPressed;
+        _window.KeyReleased += OnKeyReleased;
+        _window.MouseWheelScrolled += OnMouseWheelScrolled;
+        _window.MouseButtonPressed += OnMouseButtonPressed;
+        _window.MouseButtonReleased += OnMouseButtonReleased;
+        _window.MouseMoved += OnMouseMoved;
     }
 
     public bool CloseRequested { get; private set; }
@@ -51,84 +49,98 @@ internal sealed class DemoInputBindings
 
     public bool IsFireHeld => _pressed.Contains(Key.Space);
 
-    /// <summary>Cleared by the host once it has rebuilt the sim in response to a pending
-    /// restart request, so a subsequent R-press fires a new one.</summary>
     public void ClearRestartRequest() => RestartRequested = false;
 
-    /// <summary>Cleared by the host once it has toggled the <see cref="PauseController"/>
-    /// in response to a pending P-press, so the next P-press fires a fresh toggle.</summary>
     public void ClearPauseToggleRequest() => PauseToggleRequested = false;
 
-    private float AxisFromKeys(Key positive, Key negative) =>
-        (_pressed.Contains(positive) ? 1f : 0f) - (_pressed.Contains(negative) ? 1f : 0f);
-
-    private void WireKeyboard(SdlWindowService window, GarageSceneController garage)
+    public void Dispose()
     {
-        window.KeyPressed += key =>
+        if (_disposed)
         {
-            _pressed.Add(key);
-            switch (key)
-            {
-                case Key.Escape:
-                    CloseRequested = true;
-                    break;
-                case Key.Up:
-                    garage.Orbit.TogglePause();
-                    break;
-                case Key.Left:
-                    garage.Orbit.DecreaseSpeed();
-                    break;
-                case Key.Right:
-                    garage.Orbit.IncreaseSpeed();
-                    break;
-                case Key.Down:
-                    garage.Orbit.ResetSpeed();
-                    break;
-                case Key.R:
-                    RestartRequested = true;
-                    break;
-                case Key.P:
-                    PauseToggleRequested = true;
-                    break;
-            }
-        };
-        window.KeyReleased += key => _pressed.Remove(key);
+            return;
+        }
+
+        _disposed = true;
+        _window.CloseRequested -= OnCloseRequested;
+        _window.KeyPressed -= OnKeyPressed;
+        _window.KeyReleased -= OnKeyReleased;
+        _window.MouseWheelScrolled -= OnMouseWheelScrolled;
+        _window.MouseButtonPressed -= OnMouseButtonPressed;
+        _window.MouseButtonReleased -= OnMouseButtonReleased;
+        _window.MouseMoved -= OnMouseMoved;
+        _pressed.Clear();
     }
 
-    private void WireMouse(SdlWindowService window, GarageSceneController garage)
+    private float AxisFromKeys(Key positive, Key negative) =>
+        (_pressed.Contains(positive) ? 1f : 0f)
+        - (_pressed.Contains(negative) ? 1f : 0f);
+
+    private void OnCloseRequested() => CloseRequested = true;
+
+    private void OnKeyPressed(Key key)
     {
-        window.MouseWheelScrolled += delta => garage.Zoom(delta);
-        window.MouseButtonPressed += button =>
+        _pressed.Add(key);
+        switch (key)
         {
-            if (button == MouseButton.Left)
-            {
-                _dragging = true;
-            }
-        };
-        window.MouseButtonReleased += button =>
-        {
-            if (button == MouseButton.Left)
-            {
-                _dragging = false;
-            }
-        };
-        window.MouseMoved += (dx, dy) =>
-        {
-            if (!_dragging)
-            {
-                return;
-            }
+            case Key.Escape:
+                CloseRequested = true;
+                break;
+            case Key.Up:
+                _garage.Orbit.TogglePause();
+                break;
+            case Key.Left:
+                _garage.Orbit.DecreaseSpeed();
+                break;
+            case Key.Right:
+                _garage.Orbit.IncreaseSpeed();
+                break;
+            case Key.Down:
+                _garage.Orbit.ResetSpeed();
+                break;
+            case Key.R:
+                RestartRequested = true;
+                break;
+            case Key.P:
+                PauseToggleRequested = true;
+                break;
+        }
+    }
 
-            if (dx != 0)
-            {
-                garage.Orbit.AdvancePhase(dx / (float)_windowWidth);
-            }
+    private void OnKeyReleased(Key key) => _pressed.Remove(key);
 
-            if (dy != 0)
-            {
-                // SDL motion: +Y is screen-down. Drag-up should raise the camera, so negate.
-                garage.PitchCamera(-dy);
-            }
-        };
+    private void OnMouseWheelScrolled(float delta) => _garage.Zoom(delta);
+
+    private void OnMouseButtonPressed(MouseButton button)
+    {
+        if (button == MouseButton.Left)
+        {
+            _dragging = true;
+        }
+    }
+
+    private void OnMouseButtonReleased(MouseButton button)
+    {
+        if (button == MouseButton.Left)
+        {
+            _dragging = false;
+        }
+    }
+
+    private void OnMouseMoved(int deltaX, int deltaY)
+    {
+        if (!_dragging)
+        {
+            return;
+        }
+
+        if (deltaX != 0)
+        {
+            _garage.Orbit.AdvancePhase(deltaX / (float)_windowWidth);
+        }
+
+        if (deltaY != 0)
+        {
+            _garage.PitchCamera(-deltaY);
+        }
     }
 }

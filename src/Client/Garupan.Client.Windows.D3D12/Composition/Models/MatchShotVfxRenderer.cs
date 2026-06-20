@@ -90,18 +90,23 @@ internal sealed class MatchShotVfxRenderer : IDisposable
 
         ShotVfxTexture? muzzle = null;
         ShotVfxTexture? smoke = null;
+        ShotVfxTexture? dirt = null;
         try
         {
             muzzle = ShotVfxTexture.Load(device, vfs.Realize(MuzzleFlashTexturePath), $"{debugNamePrefix}.muzzle");
             smoke = ShotVfxTexture.Load(device, vfs.Realize(SmokeTexturePath), $"{debugNamePrefix}.smoke");
-            var dirt = ShotVfxTexture.Load(device, vfs.Realize(DirtTexturePath), $"{debugNamePrefix}.dirt");
-            return new MatchShotVfxRenderer(drawSurface, muzzle, smoke, dirt);
+            dirt = ShotVfxTexture.Load(device, vfs.Realize(DirtTexturePath), $"{debugNamePrefix}.dirt");
+            var renderer = new MatchShotVfxRenderer(drawSurface, muzzle, smoke, dirt);
+            muzzle = null;
+            smoke = null;
+            dirt = null;
+            return renderer;
         }
-        catch
+        finally
         {
             muzzle?.Dispose();
             smoke?.Dispose();
-            throw;
+            dirt?.Dispose();
         }
     }
 

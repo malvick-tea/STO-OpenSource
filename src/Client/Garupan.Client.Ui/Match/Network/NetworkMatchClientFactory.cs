@@ -1,5 +1,7 @@
+using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Opus.Net.Udp.Frame;
 using Opus.Net.Udp.Transport;
 
 namespace Garupan.Client.Ui.Match.Network;
@@ -16,15 +18,17 @@ namespace Garupan.Client.Ui.Match.Network;
 /// </remarks>
 public sealed class NetworkMatchClientFactory
 {
+    public const string AuthenticationKeyFileEnvironmentVariable = "STO_AUTH_KEY_FILE";
+
     private readonly ILoggerFactory _loggerFactory;
-    private readonly UdpTransportOptions _transportOptions;
+    private readonly UdpTransportOptions? _transportOptions;
 
     public NetworkMatchClientFactory(
         ILoggerFactory? loggerFactory = null,
         UdpTransportOptions? transportOptions = null)
     {
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
-        _transportOptions = transportOptions ?? UdpTransportOptions.Default;
+        _transportOptions = transportOptions;
     }
 
     /// <summary>Opens a UDP client transport against <paramref name="endpoint"/> and
@@ -34,14 +38,44 @@ public sealed class NetworkMatchClientFactory
     public NetworkMatchClient Create(NetworkMatchEndpoint endpoint)
     {
         System.ArgumentNullException.ThrowIfNull(endpoint);
-        var transport = new UdpClientTransport(
-            name: "sto-client",
-            serverEndpoint: endpoint.ServerEndpoint,
-            options: _transportOptions,
-            logger: _loggerFactory.CreateLogger<UdpClientTransport>());
-        return new NetworkMatchClient(
-            transport,
-            ownsTransport: true,
-            logger: _loggerFactory.CreateLogger<NetworkMatchClient>());
+        byte[]? runtimeKey = null;
+        try
+        {
+            var options = _transportOptions ?? BuildRuntimeTransportOptions(out runtimeKey);
+            var transport = new UdpClientTransport(
+                name: "sto-client",
+                serverEndpoint: endpoint.ServerEndpoint,
+                options,
+                logger: _loggerFactory.CreateLogger<UdpClientTransport>());
+            return new NetworkMatchClient(
+                transport,
+                ownsTransport: true,
+                logger: _loggerFactory.CreateLogger<NetworkMatchClient>());
+        }
+        finally
+        {
+            if (runtimeKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(runtimeKey);
+            }
+        }
+    }
+
+    private static UdpTransportOptions BuildRuntimeTransportOptions(
+        out byte[] authenticationKey)
+    {
+        var keyPath = System.Environment.GetEnvironmentVariable(
+            AuthenticationKeyFileEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(keyPath))
+        {
+            throw new InvalidOperationException(
+                $"Set {AuthenticationKeyFileEnvironmentVariable} to the authenticated-session key file.");
+        }
+
+        authenticationKey = UdpAuthentication.ReadKeyFile(keyPath);
+        return UdpTransportOptions.Default with
+        {
+            AuthenticationKey = authenticationKey,
+        };
     }
 }

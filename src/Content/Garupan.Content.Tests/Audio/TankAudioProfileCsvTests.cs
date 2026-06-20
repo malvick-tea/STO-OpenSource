@@ -61,6 +61,15 @@ public sealed class TankAudioProfileCsvTests
     }
 
     [Fact]
+    public void Parse_rejects_traversal_in_an_audio_path()
+    {
+        var act = () => TankAudioProfileCsv.Parse(
+            Csv(Row().Replace("res://a/gun.ogg", "res://a/../outside.ogg")));
+
+        act.Should().Throw<InvalidDataException>().WithMessage("*gun*");
+    }
+
+    [Fact]
     public void Parse_rejects_a_header_mismatch()
     {
         var act = () => TankAudioProfileCsv.Parse("wrong,header\n" + Row());

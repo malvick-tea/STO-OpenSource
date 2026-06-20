@@ -7,6 +7,7 @@ using Garupan.Sim;
 using Garupan.Sim.Components;
 using Garupan.Sim.Loop;
 using Garupan.Sim.Protocol;
+using Garupan.Sim.Replay;
 using Garupan.Sim.Snapshot;
 using Garupan.Sim.Spawn;
 using Microsoft.Extensions.Logging;
@@ -52,7 +53,7 @@ namespace Garupan.Server.Match;
 /// world, outcome, snapshot, and peer lifecycle. Leaf policies remain in focused collaborators.
 /// </para>
 /// </summary>
-public sealed class MatchHost : IDisposable
+public sealed partial class MatchHost : IDisposable
 {
     private readonly INetTransport _transport;
     private readonly MatchHostOptions _options;
@@ -63,7 +64,10 @@ public sealed class MatchHost : IDisposable
     private readonly FixedStepLoop _tickLoop;
     private readonly MatchRoster _roster = new();
     private readonly MatchOutcomeTracker _outcomeTracker;
+    private readonly MatchAdmissionPolicy _admissionPolicy;
+    private readonly ClientInputGuard _inputGuard = new();
     private readonly List<MatchParticipant> _participantScratch = new();
+    private readonly IReplaySink _replaySink;
     private GameTime _time;
     private int _ticksSinceLastSnapshot;
     private int _snapshotsBroadcast;
@@ -80,9 +84,24 @@ public sealed class MatchHost : IDisposable
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        if (_options.MaxPlayers is <= 0 or > SnapshotWire.MaxEntities)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                $"MaxPlayers must be in [1,{SnapshotWire.MaxEntities}].");
+        }
+
+        if (!float.IsFinite(_options.VisibilityRadiusMeters)
+            || _options.VisibilityRadiusMeters <= 0f)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                "VisibilityRadiusMeters must be finite and positive.");
+        }
+
         _logger = logger ?? NullLogger<MatchHost>.Instance;
 
-        _session = new ServerSession(_transport, NullLogger<ServerSession>.Instance);
+        _session = new ServerSession(_transport, _logger);
         _world = SimWorld.Create();
         MapObstacleSpawner.Spawn(_world, _options.MapObstacles);
         MapPropSpawner.Spawn(_world, _options.MapProps);
@@ -94,6 +113,10 @@ public sealed class MatchHost : IDisposable
         _time = GameTime.AtRate(_options.TickRateHz);
         _tickLoop.OnTick = OnTick;
         _outcomeTracker = new MatchOutcomeTracker(_options.OutcomeRule);
+        _admissionPolicy = new MatchAdmissionPolicy(
+            _options.MaxPlayers,
+            _options.AllowLateJoin);
+        _replaySink = _options.ReplaySink ?? NullReplaySink.Instance;
 
         _session.PeerConnected += OnPeerConnected;
         _session.PeerDisconnected += OnPeerDisconnected;
@@ -149,8 +172,26 @@ public sealed class MatchHost : IDisposable
         _session.PeerDisconnected -= OnPeerDisconnected;
         _session.ClientInputReceived -= OnClientInputReceived;
         _session.Dispose();
+
+        // Flush the replay sink before the world is torn down so any in-flight
+        // recording captures the final authoritative state. The sink's flush
+        // is responsible for its own atomicity; if it throws, the host logs
+        // and continues tearing down rather than leaking the session.
+        try
+        {
+            _replaySink.FlushAsync(System.Threading.CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Replay sink flush on dispose failed.");
+        }
+
+        _replaySink.Dispose();
         _world.Dispose();
         _roster.Clear();
+        _inputGuard.Clear();
     }
 
     /// <summary>Recycles the host for the next match. Destroys every player entity in
@@ -160,39 +201,6 @@ public sealed class MatchHost : IDisposable
     /// new Welcome that the client treats as a match boundary. Called automatically by
     /// the post-match hold counter (<see cref="MatchHostOptions.PostMatchHoldTicks"/>);
     /// also callable directly by operations tooling.</summary>
-    public void ResetMatch()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        // Snapshot the current peer list — the roster will be re-keyed by the re-spawn pass.
-        var peersToRespawn = new List<ConnectionId>(_roster.Count);
-        foreach (var player in _roster.Players)
-        {
-            peersToRespawn.Add(player.Connection);
-            if (_world.IsAlive(player.Entity))
-            {
-                _world.Destroy(player.Entity);
-            }
-        }
-
-        _roster.Clear();
-        _outcomeTracker.Reset();
-        _postMatchTicksRemaining = -1;
-        MapPropRoundReset.RestoreStanding(_world);
-
-        foreach (var peer in peersToRespawn)
-        {
-            SpawnPlayerForPeer(peer);
-        }
-
-        _matchesPlayed++;
-        _logger.LogInformation(
-            "Match reset on tick {Tick}: next round = match #{Count}, {Players} players seated.",
-            _time.Tick.Value,
-            _matchesPlayed + 1,
-            _roster.Count);
-    }
-
     private void OnTick(GameTime time)
     {
         _time = time;
@@ -207,6 +215,8 @@ public sealed class MatchHost : IDisposable
             AdvancePostMatchHold();
             return;
         }
+
+        _admissionPolicy.ObservePlayerCount(_roster.Count);
 
         _pipeline.Tick(_world, time, SimSeed.Zero);
         EvaluateOutcome();
@@ -282,12 +292,56 @@ public sealed class MatchHost : IDisposable
     private void BroadcastSnapshot()
     {
         var snapshot = SnapshotCapture.Capture(_world, _time.Tick);
-        _lastBroadcastDeliveredCount = _session.BroadcastSnapshot(snapshot);
+
+        // Record the authoritative snapshot into the replay sink BEFORE the
+        // per-peer visibility filter strips enemy state. The replay must
+        // carry the full world so a future replayer (or post-match review
+        // tool) can render any camera angle, not just one peer's view. The
+        // sink is non-blocking on the calling thread; disk I/O is deferred
+        // to flush on match-decided / dispose.
+        _replaySink.RecordSnapshot(snapshot);
+
+        var delivered = 0;
+        foreach (var player in _roster.Players)
+        {
+            var visible = SnapshotVisibilityFilter.ForPeer(
+                snapshot,
+                player,
+                _roster.Players,
+                _options.OutcomeRule,
+                _options.VisibilityRadiusMeters);
+            if (_session.SendSnapshot(player.Connection, visible))
+            {
+                delivered++;
+            }
+        }
+
+        _lastBroadcastDeliveredCount = delivered;
         _snapshotsBroadcast++;
     }
 
     private void OnPeerConnected(ConnectionId peer)
     {
+        var admission = _admissionPolicy.Evaluate(_roster.Count);
+        if (admission == MatchAdmissionDecision.LateJoinDisabled)
+        {
+            _logger.LogWarning(
+                "Rejected authenticated peer {Connection}: late joining is disabled.",
+                peer);
+            _transport.Disconnect(peer);
+            return;
+        }
+
+        if (admission == MatchAdmissionDecision.CapacityReached)
+        {
+            _logger.LogWarning(
+                "Rejected authenticated peer {Connection}: match capacity {Capacity} is full.",
+                peer,
+                _options.MaxPlayers);
+            _transport.Disconnect(peer);
+            return;
+        }
+
         var player = SpawnPlayerForPeer(peer);
 
         _logger.LogInformation(
@@ -336,52 +390,5 @@ public sealed class MatchHost : IDisposable
             RespawnsConfigured: _options.RespawnsPerPeer,
             IsCommander: isCommander));
         return player;
-    }
-
-    private void OnPeerDisconnected(ConnectionId peer)
-    {
-        if (!_roster.Remove(peer, out var player))
-        {
-            return;
-        }
-
-        if (_world.IsAlive(player.Entity))
-        {
-            _world.Destroy(player.Entity);
-        }
-
-        _logger.LogInformation(
-            "Peer {Peer} left match: network_id={NetworkId}, remaining_players={Count}.",
-            peer,
-            player.NetworkId,
-            _roster.Count);
-    }
-
-    private void OnClientInputReceived(ConnectionId peer, ClientInputFrame frame)
-    {
-        if (!_roster.TryGet(peer, out var player))
-        {
-            _logger.LogWarning("Dropped input from unknown peer {Peer}.", peer);
-            return;
-        }
-
-        if (!_world.IsAlive(player.Entity))
-        {
-            _logger.LogWarning(
-                "Dropped input from {Peer}: entity {Entity} is no longer alive.",
-                peer,
-                player.Entity);
-            return;
-        }
-
-        _world.AddOrSet(player.Entity, new PendingInput
-        {
-            Tick = frame.Tick,
-            Throttle = frame.Throttle,
-            Steering = frame.Steering,
-            TurretYawRadians = frame.TurretYawRadians,
-            BarrelPitchRadians = frame.BarrelPitchRadians,
-            Flags = frame.Flags,
-        });
     }
 }

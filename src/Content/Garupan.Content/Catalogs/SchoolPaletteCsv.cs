@@ -87,9 +87,11 @@ public static class SchoolPaletteCsv
 
     private static OpponentSchool ParseSchool(string name, int rowIndex)
     {
-        // Enum.TryParse with ignoreCase = true so CSV can use lower-case school names
-        // (matches the "data convention" of all-lower identifiers in CSVs).
-        if (!Enum.TryParse<OpponentSchool>(name, ignoreCase: true, out var parsed))
+        var normalized = name.Replace("_", string.Empty, StringComparison.Ordinal);
+        if (!Enum.TryParse<OpponentSchool>(
+                normalized,
+                ignoreCase: true,
+                out var parsed))
         {
             throw new InvalidDataException(
                 $"School palette CSV row {rowIndex + 1}: unknown school \"{name}\".");

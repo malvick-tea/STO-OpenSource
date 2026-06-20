@@ -19,9 +19,13 @@ public sealed class ReplayRoundTripTests
     public void Empty_replay_round_trips()
     {
         var writer = new ReplayWriter(tickRateHz: 60, startTick: Tick.Zero);
-        var bytes = writer.Build();
+        var bytes = writer.Build(ReplayTestKeys.IntegrityKey);
 
-        var result = ReplayReader.TryRead(bytes, out var header, out var frames);
+        var result = ReplayReader.TryRead(
+            bytes,
+            ReplayTestKeys.IntegrityKey,
+            out var header,
+            out var frames);
 
         result.Ok.Should().BeTrue();
         header.TickRateHz.Should().Be(60);
@@ -40,9 +44,13 @@ public sealed class ReplayRoundTripTests
 
         var writer = new ReplayWriter(60, new Tick(42));
         writer.RecordSnapshot(snap);
-        var bytes = writer.Build();
+        var bytes = writer.Build(ReplayTestKeys.IntegrityKey);
 
-        var result = ReplayReader.TryRead(bytes, out var header, out var frames);
+        var result = ReplayReader.TryRead(
+            bytes,
+            ReplayTestKeys.IntegrityKey,
+            out var header,
+            out var frames);
         result.Ok.Should().BeTrue();
         header.FrameCount.Should().Be(1);
         frames.Should().HaveCount(1);
@@ -67,8 +75,12 @@ public sealed class ReplayRoundTripTests
             writer.RecordSnapshot(SnapshotCapture.Capture(world, new Tick(t)));
         }
 
-        var bytes = writer.Build();
-        ReplayReader.TryRead(bytes, out var header, out var frames).Ok.Should().BeTrue();
+        var bytes = writer.Build(ReplayTestKeys.IntegrityKey);
+        ReplayReader.TryRead(
+            bytes,
+            ReplayTestKeys.IntegrityKey,
+            out var header,
+            out var frames).Ok.Should().BeTrue();
 
         header.FrameCount.Should().Be(5);
         for (var i = 0; i < 5; i++)
@@ -92,11 +104,11 @@ public sealed class ReplayRoundTripTests
 
         var w1 = new ReplayWriter(60, new Tick(100));
         w1.RecordSnapshot(snap);
-        var bytes1 = w1.Build();
+        var bytes1 = w1.Build(ReplayTestKeys.IntegrityKey);
 
         var w2 = new ReplayWriter(60, new Tick(100));
         w2.RecordSnapshot(snap);
-        var bytes2 = w2.Build();
+        var bytes2 = w2.Build(ReplayTestKeys.IntegrityKey);
 
         Sha256(bytes1).Should().Be(Sha256(bytes2));
     }
@@ -104,13 +116,18 @@ public sealed class ReplayRoundTripTests
     [Fact]
     public void Read_rejects_bad_magic()
     {
-        var bytes = new byte[ReplayWire.HeaderBytes];
+        var writer = new ReplayWriter(60, Tick.Zero);
+        var bytes = writer.Build(ReplayTestKeys.IntegrityKey);
         bytes[0] = (byte)'X';
 
-        var result = ReplayReader.TryRead(bytes, out _, out var frames);
+        var result = ReplayReader.TryRead(
+            bytes,
+            ReplayTestKeys.IntegrityKey,
+            out _,
+            out var frames);
 
         result.Ok.Should().BeFalse();
-        result.Error.Should().Contain("magic");
+        result.Error.Should().Contain("authentication");
         frames.Should().BeEmpty();
     }
 
@@ -118,12 +135,16 @@ public sealed class ReplayRoundTripTests
     public void Read_rejects_version_mismatch()
     {
         var writer = new ReplayWriter(60, Tick.Zero);
-        var bytes = writer.Build();
+        var bytes = writer.Build(ReplayTestKeys.IntegrityKey);
         System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4), 999u);
 
-        var result = ReplayReader.TryRead(bytes, out _, out _);
+        var result = ReplayReader.TryRead(
+            bytes,
+            ReplayTestKeys.IntegrityKey,
+            out _,
+            out _);
         result.Ok.Should().BeFalse();
-        result.Error.Should().Contain("version");
+        result.Error.Should().Contain("authentication");
     }
 
     [Fact]
@@ -140,7 +161,7 @@ public sealed class ReplayRoundTripTests
     public void Magic_prefix_is_svor_ascii()
     {
         var writer = new ReplayWriter(60, Tick.Zero);
-        var bytes = writer.Build();
+        var bytes = writer.Build(ReplayTestKeys.IntegrityKey);
 
         bytes[0].Should().Be((byte)'S');
         bytes[1].Should().Be((byte)'V');
@@ -148,9 +169,73 @@ public sealed class ReplayRoundTripTests
         bytes[3].Should().Be((byte)'R');
     }
 
+    [Fact]
+    public void Read_rejects_a_replay_signed_by_another_install()
+    {
+        var writer = new ReplayWriter(60, Tick.Zero);
+        var bytes = writer.Build(ReplayTestKeys.IntegrityKey);
+        var otherKey = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("other-install"));
+
+        var result = ReplayReader.TryRead(bytes, otherKey, out _, out _);
+
+        result.Ok.Should().BeFalse();
+        result.Error.Should().Contain("authentication");
+    }
+
+    [Fact]
+    public void Read_rejects_a_tampered_replay_body()
+    {
+        var writer = new ReplayWriter(60, Tick.Zero);
+        var bytes = writer.Build(ReplayTestKeys.IntegrityKey);
+        bytes[ReplayWire.HeaderBytes - 1] ^= 0x80;
+
+        var result = ReplayReader.TryRead(
+            bytes,
+            ReplayTestKeys.IntegrityKey,
+            out _,
+            out _);
+
+        result.Ok.Should().BeFalse();
+        result.Error.Should().Contain("authentication");
+    }
+
+    [Fact]
+    public void Writer_rejects_negative_start_tick()
+    {
+        var act = () => new ReplayWriter(60, new Tick(-1));
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void Writer_rejects_tick_rate_above_wire_limit()
+    {
+        var act = () => new ReplayWriter(
+            ReplayWire.MaximumTickRateHz + 1,
+            Tick.Zero);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void Writer_rejects_out_of_order_snapshot_ticks()
+    {
+        var writer = new ReplayWriter(60, Tick.Zero);
+        writer.RecordSnapshot(EmptySnapshot(new Tick(2)));
+
+        var act = () => writer.RecordSnapshot(EmptySnapshot(new Tick(1)));
+
+        act.Should().Throw<ArgumentException>();
+    }
+
     private static string Sha256(byte[] bytes)
     {
         var hash = SHA256.HashData(bytes);
         return Convert.ToHexString(hash);
     }
+
+    private static WorldSnapshot EmptySnapshot(Tick tick) => new(
+        tick,
+        Array.Empty<EntitySnapshot>(),
+        Array.Empty<ProjectileSnapshot>());
 }

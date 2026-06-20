@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography;
 using Garupan.Sim.Snapshot;
 using Opus.Foundation;
 
@@ -23,12 +24,24 @@ public sealed class ReplayWriter
     private readonly int _tickRateHz;
     private readonly Tick _startTick;
     private readonly List<(uint TickOffset, byte[] Bytes)> _frames = new();
+    private long? _lastRecordedTick;
 
     public ReplayWriter(int tickRateHz, Tick startTick)
     {
-        if (tickRateHz <= 0)
+        if (tickRateHz is <= 0 or > ReplayWire.MaximumTickRateHz)
         {
-            throw new ArgumentOutOfRangeException(nameof(tickRateHz), tickRateHz, "Tick rate must be positive.");
+            throw new ArgumentOutOfRangeException(
+                nameof(tickRateHz),
+                tickRateHz,
+                $"Tick rate must be in [1,{ReplayWire.MaximumTickRateHz}].");
+        }
+
+        if (startTick.Value < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(startTick),
+                startTick,
+                "Replay start tick must be non-negative.");
         }
 
         _tickRateHz = tickRateHz;
@@ -56,37 +69,73 @@ public sealed class ReplayWriter
                 nameof(snap));
         }
 
+        if (_frames.Count >= ReplayWire.MaxReplayFrames)
+        {
+            throw new InvalidOperationException(
+                $"Replay frame count exceeds {ReplayWire.MaxReplayFrames}.");
+        }
+
+        if (_lastRecordedTick is long lastTick && snap.Tick.Value <= lastTick)
+        {
+            throw new ArgumentException(
+                $"snapshot tick {snap.Tick} is not later than the previous tick {lastTick}",
+                nameof(snap));
+        }
+
         var bytes = new byte[SnapshotWire.EncodedSize(snap)];
         SnapshotEncoder.Encode(snap, bytes);
         _frames.Add(((uint)offset, bytes));
+        _lastRecordedTick = snap.Tick.Value;
     }
 
-    public byte[] Build()
+    public byte[] Build(ReadOnlySpan<byte> authenticationKey)
     {
-        var totalLength = ReplayWire.HeaderBytes;
+        ValidateAuthenticationKey(authenticationKey);
+        long payloadLength = ReplayWire.HeaderBytes;
         foreach (var (_, bytes) in _frames)
         {
-            totalLength += ReplayWire.FrameHeaderBytes + bytes.Length;
+            payloadLength = checked(payloadLength + ReplayWire.FrameHeaderBytes + bytes.Length);
         }
 
-        var output = new byte[totalLength];
-        var span = output.AsSpan();
+        var totalLength = checked(payloadLength + ReplayWire.AuthenticationTagBytes);
+        if (totalLength > ReplayWire.MaxReplayBytes)
+        {
+            throw new InvalidOperationException(
+                $"Replay exceeds the {ReplayWire.MaxReplayBytes}-byte limit.");
+        }
 
-        ReplayWire.Magic.AsSpan().CopyTo(span);
-        BinaryPrimitives.WriteUInt32LittleEndian(span[4..], ReplayWire.Version);
-        BinaryPrimitives.WriteUInt32LittleEndian(span[8..], (uint)_tickRateHz);
-        BinaryPrimitives.WriteUInt64LittleEndian(span[12..], (ulong)_startTick.Value);
-        BinaryPrimitives.WriteUInt32LittleEndian(span[20..], (uint)_frames.Count);
+        var output = new byte[checked((int)totalLength)];
+        var payload = output.AsSpan(0, checked((int)payloadLength));
+
+        ReplayWire.Magic.AsSpan().CopyTo(payload);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload[4..], ReplayWire.Version);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload[8..], (uint)_tickRateHz);
+        BinaryPrimitives.WriteUInt64LittleEndian(payload[12..], (ulong)_startTick.Value);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload[20..], (uint)_frames.Count);
 
         var cursor = ReplayWire.HeaderBytes;
         foreach (var (tickOffset, bytes) in _frames)
         {
-            BinaryPrimitives.WriteUInt32LittleEndian(span[cursor..], tickOffset);
-            BinaryPrimitives.WriteUInt32LittleEndian(span[(cursor + 4)..], (uint)bytes.Length);
-            bytes.AsSpan().CopyTo(span[(cursor + ReplayWire.FrameHeaderBytes)..]);
+            BinaryPrimitives.WriteUInt32LittleEndian(payload[cursor..], tickOffset);
+            BinaryPrimitives.WriteUInt32LittleEndian(payload[(cursor + 4)..], (uint)bytes.Length);
+            bytes.AsSpan().CopyTo(payload[(cursor + ReplayWire.FrameHeaderBytes)..]);
             cursor += ReplayWire.FrameHeaderBytes + bytes.Length;
         }
 
+        HMACSHA256.HashData(
+            authenticationKey,
+            payload,
+            output.AsSpan(checked((int)payloadLength), ReplayWire.AuthenticationTagBytes));
         return output;
+    }
+
+    private static void ValidateAuthenticationKey(ReadOnlySpan<byte> authenticationKey)
+    {
+        if (authenticationKey.Length < ReplayWire.MinimumAuthenticationKeyBytes)
+        {
+            throw new ArgumentException(
+                $"Replay authentication key must contain at least {ReplayWire.MinimumAuthenticationKeyBytes} bytes.",
+                nameof(authenticationKey));
+        }
     }
 }

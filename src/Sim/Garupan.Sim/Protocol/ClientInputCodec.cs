@@ -42,7 +42,7 @@ public static class ClientInputCodec
     {
         frame = default;
 
-        if (bytes.Length < ClientInputWire.FrameBytes)
+        if (bytes.Length != ClientInputWire.FrameBytes)
         {
             return WireCodecResult.Fail("client input frame: buffer shorter than fixed size");
         }
@@ -59,14 +59,25 @@ public static class ClientInputCodec
         }
 
         var body = bytes[ClientInputWire.HeaderBytes..];
-        frame = new ClientInputFrame(
+        var throttle = BinaryPrimitives.ReadSingleLittleEndian(body[12..]);
+        var steering = BinaryPrimitives.ReadSingleLittleEndian(body[16..]);
+        var turretYaw = BinaryPrimitives.ReadSingleLittleEndian(body[20..]);
+        var flags = (InputFlags)BinaryPrimitives.ReadUInt32LittleEndian(body[24..]);
+        var barrelPitch = BinaryPrimitives.ReadSingleLittleEndian(body[28..]);
+        var candidate = new ClientInputFrame(
             Tick: BinaryPrimitives.ReadUInt64LittleEndian(body[0..]),
             NetworkId: BinaryPrimitives.ReadUInt32LittleEndian(body[8..]),
-            Throttle: BinaryPrimitives.ReadSingleLittleEndian(body[12..]),
-            Steering: BinaryPrimitives.ReadSingleLittleEndian(body[16..]),
-            TurretYawRadians: BinaryPrimitives.ReadSingleLittleEndian(body[20..]),
-            Flags: (InputFlags)BinaryPrimitives.ReadUInt32LittleEndian(body[24..]),
-            BarrelPitchRadians: BinaryPrimitives.ReadSingleLittleEndian(body[28..]));
+            Throttle: throttle,
+            Steering: steering,
+            TurretYawRadians: turretYaw,
+            Flags: flags,
+            BarrelPitchRadians: barrelPitch);
+        if (!ClientInputValidation.IsValid(candidate))
+        {
+            return WireCodecResult.Fail("client input frame: invalid numeric value or flag bits");
+        }
+
+        frame = candidate;
 
         return WireCodecResult.Success;
     }

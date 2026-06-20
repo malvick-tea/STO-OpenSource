@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using Garupan.Sim.Protocol;
 using Garupan.Sim.Snapshot;
@@ -33,16 +34,16 @@ public sealed class ServerSession : IDisposable
         Math.Max(WelcomeWire.FrameBytes, MatchOverWire.FrameBytes);
 
     private readonly INetTransport _transport;
-    private readonly ILogger<ServerSession> _logger;
+    private readonly ILogger _logger;
     private readonly List<NetEvent> _eventScratch = new();
     private readonly HashSet<ConnectionId> _peers = new();
     private readonly byte[] _outboundFixedScratch = new byte[OutboundFixedScratchBytes];
     private bool _disposed;
 
-    public ServerSession(INetTransport transport, ILogger<ServerSession>? logger = null)
+    public ServerSession(INetTransport transport, ILogger? logger = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
-        _logger = logger ?? NullLogger<ServerSession>.Instance;
+        _logger = logger ?? NullLogger.Instance;
     }
 
     /// <summary>Snapshot of the connected peer set. Stable inside one <see cref="Pump"/>
@@ -90,26 +91,71 @@ public sealed class ServerSession : IDisposable
     }
 
     /// <summary>Encodes <paramref name="snap"/> through <see cref="SnapshotEncoder"/> once
-    /// and sends to every connected peer. Returns the number of peers the transport
-    /// accepted the send for — equal to <see cref="ConnectedPeers"/> count when every
-    /// link is healthy.</summary>
+    /// and sends the SAME byte buffer to every connected peer. Returns the number of
+    /// peers the transport accepted the send for — equal to <see cref="ConnectedPeers"/>
+    /// count when every link is healthy.</summary>
+    /// <remarks><b>This method bypasses the per-peer visibility filter.</b> Production
+    /// code must call <see cref="SendSnapshot"/> per peer through the
+    /// <c>SnapshotVisibilityFilter</c> so a peer never sees enemy entities outside its
+    /// visibility radius. This overload is retained only for tests that exercise the
+    /// transport fan-out in isolation; calling it from production re-introduces the
+    /// wallhack vulnerability (every peer sees the full world state) and is a security
+    /// defect.</remarks>
+    [Obsolete("Production code must use per-peer SendSnapshot with SnapshotVisibilityFilter; this overload bypasses the wallhack filter.")]
     public int BroadcastSnapshot(WorldSnapshot snap)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        var buffer = new byte[SnapshotWire.EncodedSize(snap)];
-        var written = SnapshotEncoder.Encode(snap, buffer);
-        var slice = buffer.AsSpan(0, written);
-
-        var delivered = 0;
-        foreach (var peer in _peers)
+        var requiredBytes = SnapshotWire.EncodedSize(snap);
+        var buffer = ArrayPool<byte>.Shared.Rent(requiredBytes);
+        try
         {
-            if (_transport.Send(peer, slice))
+            var written = SnapshotEncoder.Encode(snap, buffer);
+            var slice = buffer.AsSpan(0, written);
+            var delivered = 0;
+            foreach (var peer in _peers)
             {
-                delivered++;
+                if (_transport.Send(peer, slice))
+                {
+                    delivered++;
+                }
             }
+
+            return delivered;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
+        }
+    }
+
+    public bool SendSnapshot(ConnectionId peer, WorldSnapshot snapshot)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (!_peers.Contains(peer))
+        {
+            return false;
         }
 
-        return delivered;
+        try
+        {
+            var requiredBytes = SnapshotWire.EncodedSize(snapshot);
+            var buffer = ArrayPool<byte>.Shared.Rent(requiredBytes);
+            try
+            {
+                var written = SnapshotEncoder.Encode(snapshot, buffer);
+                return _transport.Send(peer, buffer.AsSpan(0, written));
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
+            }
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Discarded unsafe snapshot for peer {Peer}.", peer);
+            return false;
+        }
     }
 
     /// <summary>Encodes <paramref name="frame"/> through <see cref="MatchOverCodec"/> and

@@ -15,6 +15,18 @@ internal sealed unsafe class ShotVfxTexture : IDisposable
     private ID3D12DescriptorHeap* _srvHeap;
     private bool _disposed;
 
+    /// <summary>Narrow finalizer that releases only the unmanaged COM pointer
+    /// held by <see cref="_srvHeap"/>. The <see cref="D3D12Texture"/> field
+    /// has its own finalizer and is left to the GC. The finalizer must not
+    /// touch any managed object (it runs on the GC thread and the texture's
+    /// finalizer may already have executed), and must not perform a GPU wait
+    /// (the device may already be gone). It only releases the descriptor
+    /// heap, which is a pure COM Release with no driver round-trip.</summary>
+    ~ShotVfxTexture()
+    {
+        ReleaseSrvHeap();
+    }
+
     private ShotVfxTexture(D3D12Texture texture, ID3D12DescriptorHeap* srvHeap, GpuDescriptorHandle srvTable)
     {
         _texture = texture;
@@ -33,25 +45,42 @@ internal sealed unsafe class ShotVfxTexture : IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(debugName);
 
         var decoded = ImageDecoder.DecodeRgba8(File.ReadAllBytes(path));
-        var texture = device.CreateGraphicsTexture(new RhiTextureDescription(
-            debugName,
-            decoded.Width,
-            decoded.Height,
-            1,
-            RhiTextureFormat.Rgba8Unorm,
-            RhiTextureUsage.Sampled));
-        using (var commandList = device.CreateGraphicsCommandList($"{debugName}.upload"))
+        D3D12Texture? texture = null;
+        ID3D12DescriptorHeap* srvHeap = null;
+        try
         {
-            commandList.Begin(0);
-            using var staging = device.ScheduleTextureUpload(texture, decoded.Rgba, commandList);
-            commandList.End();
-            commandList.ExecuteOn(device);
-            device.WaitForIdle();
-        }
+            texture = device.CreateGraphicsTexture(new RhiTextureDescription(
+                debugName,
+                decoded.Width,
+                decoded.Height,
+                1,
+                RhiTextureFormat.Rgba8Unorm,
+                RhiTextureUsage.Sampled));
+            using (var commandList = device.CreateGraphicsCommandList($"{debugName}.upload"))
+            {
+                commandList.Begin(0);
+                using var staging = device.ScheduleTextureUpload(texture, decoded.Rgba, commandList);
+                commandList.End();
+                commandList.ExecuteOn(device);
+                device.WaitForIdle();
+            }
 
-        var srvHeap = device.CreateSrvDescriptorHeap(1u);
-        var srvTable = device.CreateShaderResourceView(texture, srvHeap);
-        return new ShotVfxTexture(texture, srvHeap, srvTable);
+            srvHeap = device.CreateSrvDescriptorHeap(1u);
+            var srvTable = device.CreateShaderResourceView(texture, srvHeap);
+            var result = new ShotVfxTexture(texture, srvHeap, srvTable);
+            texture = null;
+            srvHeap = null;
+            return result;
+        }
+        finally
+        {
+            if (srvHeap != null)
+            {
+                srvHeap->Release();
+            }
+
+            texture?.Dispose();
+        }
     }
 
     public void Dispose()
@@ -62,12 +91,20 @@ internal sealed unsafe class ShotVfxTexture : IDisposable
         }
 
         _disposed = true;
-        if (_srvHeap != null)
+        GC.SuppressFinalize(this);
+        ReleaseSrvHeap();
+        _texture.Dispose();
+    }
+
+    private void ReleaseSrvHeap()
+    {
+        var heap = _srvHeap;
+        if (heap == null)
         {
-            _srvHeap->Release();
-            _srvHeap = null;
+            return;
         }
 
-        _texture.Dispose();
+        _srvHeap = null;
+        heap->Release();
     }
 }

@@ -50,6 +50,21 @@ internal sealed class MatchRoster
     public bool TryGet(ConnectionId connection, out ConnectedPlayer player) =>
         _players.TryGetValue(connection, out player);
 
+    public bool TryGetByNetworkId(uint networkId, out ConnectedPlayer player)
+    {
+        foreach (var candidate in _players.Values)
+        {
+            if (candidate.NetworkId == networkId)
+            {
+                player = candidate;
+                return true;
+            }
+        }
+
+        player = default;
+        return false;
+    }
+
     /// <summary>Removes the peer seated for <paramref name="connection"/>, handing it back
     /// in <paramref name="player"/>. False when the connection was not seated.</summary>
     public bool Remove(ConnectionId connection, out ConnectedPlayer player) =>
